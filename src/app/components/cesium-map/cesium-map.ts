@@ -194,6 +194,8 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
     this.isPointInPolygon.bind(this)
 );
 
+await BuildingLayer.load(this.viewer);
+
 
     // await this.viewer.zoomTo(buildingDataSource);
 

@@ -6,110 +6,269 @@ export class BuildingLayer {
 
 
         const buildings =
-            await Cesium.createOsmBuildingsAsync({
+            await Cesium.GeoJsonDataSource.load(
+                "assets/data/buildings.geojson",
+                {
+                    clampToGround: false
+                }
+            );
 
-                style: new Cesium.Cesium3DTileStyle({
 
-                    color: {
+        // MAKE BUILDINGS VISIBLE
+        const entities = buildings.entities.values;
 
-                        conditions: [
 
-                            [
-                                "${feature['building']} === 'hospital'",
-                                "color('#E8B6B6', 0.95)"
-                            ],
+        const positions: Cesium.Cartographic[] = [];
 
-                            [
-                                "${feature['building']} === 'school'",
-                                "color('#E5D39A', 0.95)"
-                            ],
 
-                            [
-                                "${feature['building']} === 'industrial'",
-                                "color('#AFAFAF', 0.95)"
-                            ],
+        entities.forEach(entity => {
 
-                            [
-                                "${feature['building']} === 'commercial'",
-                                "color('#D1C2AF', 0.95)"
-                            ],
+            if (!entity.polygon) return;
 
-                            [
-                                "${feature['building']} === 'apartments'",
-                                "color('#D8D2C8', 0.95)"
-                            ],
 
-                            [
-                                "${feature['building']} === 'house'",
-                                "color('#E4D1B8', 0.95)"
-                            ],
+            const hierarchy =
+                entity.polygon.hierarchy?.getValue(
+                    Cesium.JulianDate.now()
+                );
 
-                            [
-                                "true",
-                                "color('#CFCBC3', 0.95)"
-                            ]
 
-                        ]
+            if (!hierarchy) return;
 
-                    }
 
-                })
+            const center =
+                Cesium.BoundingSphere.fromPoints(
+                    hierarchy.positions
+                ).center;
 
-            });
+
+            positions.push(
+                Cesium.Cartographic.fromCartesian(center)
+            );
+
+        });
 
 
 
-        // =========================
-        // BUILDING QUALITY
-        // =========================
-
-        buildings.maximumScreenSpaceError = 8;
-
-        buildings.dynamicScreenSpaceError = true;
-
-        buildings.dynamicScreenSpaceErrorDensity = 0.002;
-
-        buildings.dynamicScreenSpaceErrorFactor = 8;
-
-        buildings.skipLevelOfDetail = false;
+        const terrainPositions =
+            await Cesium.sampleTerrainMostDetailed(
+                viewer.terrainProvider,
+                positions
+            );
 
 
 
-        // =========================
-        // SHADOWS
-        // =========================
-
-        viewer.shadows = true;
-
-        viewer.scene.shadowMap.enabled = true;
-
-        viewer.scene.shadowMap.size = 4096;
-
-        viewer.scene.shadowMap.softShadows = true;
+        let i = 0;
 
 
-        buildings.shadows =
-            Cesium.ShadowMode.ENABLED;
+        entities.forEach(entity => {
+
+            if (!entity.polygon) return;
+
+
+            const groundHeight =
+                terrainPositions[i]?.height ?? 0;
+
+
+            i++;
+
+
+            const buildingHeight =
+                BuildingLayer.getBuildingHeight(entity);
+
+
+            entity.polygon.height =
+                new Cesium.ConstantProperty(
+                    groundHeight
+                );
+
+
+            entity.polygon.extrudedHeight =
+                new Cesium.ConstantProperty(
+                    groundHeight + buildingHeight
+                );
+
+
+            entity.polygon.material =
+                new Cesium.ColorMaterialProperty(
+                    Cesium.Color.BISQUE.withAlpha(0.8)
+                );
+
+
+            entity.polygon.outline =
+                new Cesium.ConstantProperty(true);
+
+
+            entity.polygon.outlineColor =
+                new Cesium.ConstantProperty(
+                    Cesium.Color.BLACK
+                );
+
+        });
 
 
 
-        // =========================
-        // LIGHTING
-        // =========================
+        viewer.dataSources.add(buildings);
+
+        const hoverLabel = viewer.entities.add({
+
+    label: {
+
+        text: "",
+
+        font: "14px sans-serif",
+
+        fillColor: Cesium.Color.WHITE,
+
+        showBackground: true,
+
+        backgroundColor:
+            Cesium.Color.BLACK.withAlpha(0.8),
+
+        pixelOffset:
+            new Cesium.Cartesian2(0, -40),
+
+        verticalOrigin:
+            Cesium.VerticalOrigin.BOTTOM,
+
+        show:
+            new Cesium.ConstantProperty(false),
+
+        disableDepthTestDistance:
+            Number.POSITIVE_INFINITY
+    }
+
+});
+
+
+
+const handler =
+    new Cesium.ScreenSpaceEventHandler(
+        viewer.scene.canvas
+    );
+
+
+
+handler.setInputAction(
+    (movement: Cesium.ScreenSpaceEventHandler.MotionEvent) => {
+
+
+        const picked =
+            viewer.scene.pick(
+                movement.endPosition
+            );
+
+
+        if (
+            Cesium.defined(picked) &&
+            picked.id &&
+            picked.id.polygon
+        ) {
+
+
+            const entity =
+                picked.id;
+
+
+
+            const properties =
+                entity.properties;
+
+
+
+            let text = "Building";
+
+
+            if(properties){
+
+
+                const name =
+                    properties["name"]
+                    ?.getValue();
+
+
+                const type =
+                    properties["building"]
+                    ?.getValue();
+
+
+                const tourism =
+                    properties["tourism"]
+                    ?.getValue();
+
+
+                const office =
+                    properties["office"]
+                    ?.getValue();
+
+
+
+                text =
+                    name ??
+                    tourism ??
+                    office ??
+                    type ??
+                    "Building";
+
+
+            }
+
+
+
+            const hierarchy =
+                entity.polygon!.hierarchy!
+                .getValue(
+                    Cesium.JulianDate.now()
+                );
+
+
+
+            const center =
+                Cesium.BoundingSphere
+                .fromPoints(
+                    hierarchy.positions
+                )
+                .center;
+
+
+
+            hoverLabel.position =
+    new Cesium.ConstantPositionProperty(center);
+
+
+
+            hoverLabel.label!.text =
+                new Cesium.ConstantProperty(
+                    text
+                );
+
+
+
+            hoverLabel.label!.show =
+                new Cesium.ConstantProperty(
+                    true
+                );
+
+
+
+            return;
+
+        }
+
+
+
+        hoverLabel.label!.show =
+            new Cesium.ConstantProperty(false);
+
+
+    },
+    Cesium.ScreenSpaceEventType.MOUSE_MOVE
+);
+        // MOVE CAMERA TO BUILDINGS
+        await viewer.flyTo(buildings);
+
+
 
         viewer.scene.globe.enableLighting = true;
-
-
-        viewer.scene.light =
-            new Cesium.SunLight();
-
-
-
-        // =========================
-        // ATMOSPHERE
-        // =========================
-
-      
 
 
         viewer.scene.fog.enabled = true;
@@ -117,31 +276,147 @@ export class BuildingLayer {
         viewer.scene.fog.density = 0.00015;
 
 
+        viewer.scene.globe.depthTestAgainstTerrain = false;
 
-        // =========================
-        // TERRAIN DETAIL
-        // =========================
-
-        viewer.scene.globe.maximumScreenSpaceError = 4;
-
-
-        viewer.scene.globe.depthTestAgainstTerrain = true;
-
-
-
-        // =========================
-        // ADD BUILDINGS
-        // =========================
-
-        viewer.scene.primitives.add(buildings);
-
-
-        // Rendering quality
 
         viewer.scene.msaaSamples = 4;
 
         viewer.resolutionScale = 1.2;
 
+    }
+
+    private static getBuildingHeight(
+        entity: Cesium.Entity
+    ): number {
+
+
+        const properties = entity.properties;
+
+
+        // 1. Known OSM types
+
+        if (
+            properties &&
+            properties["tourism"]?.getValue() === "hotel"
+        ) {
+            return 35;
+        }
+
+
+        if (
+            properties &&
+            (
+                properties["office"]?.getValue() ||
+                properties["government"]?.getValue()
+            )
+        ) {
+            return 25;
+        }
+
+
+        if (
+            properties &&
+            properties["historic"]?.getValue()
+        ) {
+            return 15;
+        }
+
+
+
+        // 2. Estimate from building footprint size
+
+        if (entity.polygon) {
+
+
+            const hierarchy =
+                entity.polygon.hierarchy?.getValue(
+                    Cesium.JulianDate.now()
+                );
+
+
+            if (hierarchy) {
+
+
+                const positions =
+                    hierarchy.positions;
+
+
+                const area =
+                    BuildingLayer.calculatePolygonArea(positions);
+
+
+                // Large footprint
+                if (area > 5000) {
+                    return 35;
+                }
+
+
+                // Medium footprint
+                if (area > 1000) {
+                    return 20;
+                }
+
+
+                // Small houses
+                return 8;
+
+            }
+
+        }
+
+
+
+        // fallback
+
+        return 10;
 
     }
+    private static calculatePolygonArea(
+        positions: Cesium.Cartesian3[]
+    ): number {
+
+        let area = 0;
+
+
+        for (let i = 0; i < positions.length; i++) {
+
+            const p1 =
+                Cesium.Cartographic.fromCartesian(
+                    positions[i]
+                );
+
+
+            const p2 =
+                Cesium.Cartographic.fromCartesian(
+                    positions[
+                    (i + 1) % positions.length
+                    ]
+                );
+
+
+            const x1 =
+                Cesium.Math.toDegrees(p1.longitude);
+
+            const y1 =
+                Cesium.Math.toDegrees(p1.latitude);
+
+
+            const x2 =
+                Cesium.Math.toDegrees(p2.longitude);
+
+            const y2 =
+                Cesium.Math.toDegrees(p2.latitude);
+
+
+            area +=
+                (x1 * y2) -
+                (x2 * y1);
+
+        }
+
+
+        return Math.abs(area) * 1000000;
+    }
+
+
 }
