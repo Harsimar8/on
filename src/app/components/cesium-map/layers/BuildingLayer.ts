@@ -339,7 +339,7 @@ handler.setInputAction(
 
                 const positions =
                     hierarchy.positions;
-
+                
 
                 const area =
                     BuildingLayer.calculatePolygonArea(positions);

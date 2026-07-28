@@ -188,11 +188,13 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
    
 
     await RoadLayer.load(this.viewer);
-
-    await VegetationLayer.load(
+    setTimeout(async () => {
+      await VegetationLayer.load(
     this.viewer,
     this.isPointInPolygon.bind(this)
 );
+    },2000);
+    
 
 await BuildingLayer.load(this.viewer);
 

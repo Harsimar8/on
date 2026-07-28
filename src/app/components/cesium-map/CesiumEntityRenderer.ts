@@ -23,7 +23,7 @@ export class CesiumEntityRenderer {
 
         const filter = this.teamFilterService.cesiumFilter();
 
-        this.viewer.entities.removeAll();
+         this.viewer.entities.removeAll();
 this.renderedEntities.clear();
         for (const entity of entities) {
           
