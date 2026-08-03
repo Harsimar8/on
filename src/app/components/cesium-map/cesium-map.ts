@@ -136,7 +136,7 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
       this.cesiumContainer.nativeElement,
       {
 
-        terrain: Cesium.Terrain.fromWorldTerrain(),
+        terrain: undefined,
 
         animation: false,
         timeline: false,
@@ -159,12 +159,12 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
 
 
     this.viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(
-        78.9629,   // Longitude
-        20.5937,   // Latitude
-        2500000    // Height (about zoom level 5)
-      )
-    });
+  destination: Cesium.Cartesian3.fromDegrees(
+    103.898,
+    1.34639,
+    5000
+  )
+});
     console.log(
       this.viewer.scene.screenSpaceCameraController.enableZoom
     );
@@ -178,22 +178,22 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
 
     this.viewer.scene.fog.enabled = false;
 
-    this.viewer.scene.globe.enableLighting = true;
+   this.viewer.scene.globe.enableLighting = false;
 
     this.viewer.scene.light = new Cesium.SunLight({
       intensity: 1.6
     });
 
-    this.viewer.scene.globe.depthTestAgainstTerrain = false;
+ this.viewer.scene.globe.depthTestAgainstTerrain = false;
    
 
-    await RoadLayer.load(this.viewer);
-    setTimeout(async () => {
-      await VegetationLayer.load(
-    this.viewer,
-    this.isPointInPolygon.bind(this)
-);
-    },2000);
+//     await RoadLayer.load(this.viewer);
+//     setTimeout(async () => {
+//       await VegetationLayer.load(
+//     this.viewer,
+//     this.isPointInPolygon.bind(this)
+// );
+//     },2000);
     
 
 await BuildingLayer.load(this.viewer);
@@ -314,11 +314,7 @@ await BuildingLayer.load(this.viewer);
         this.viewer.scene.canvas.clientHeight
       );
 
-      console.log("CESIUM SYNC", {
-        latitude,
-        longitude,
-        zoom
-      });
+      
 
       this.mapSync.update({
 
