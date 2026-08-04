@@ -9,30 +9,41 @@ export class BuildingLayer {
 
     // Your C++ origin
     const origin = Cesium.Cartesian3.fromDegrees(
-      103.898,
-      1.34639,
+      103.84797440,
+      1.29709880,
       0
     );
 
+    const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
 
-    const model = await Cesium.Model.fromGltfAsync({
+const rotation = Cesium.Matrix3.fromRotationZ(
+  Cesium.Math.toRadians(-90)
+);
 
-      url: "/assets/delhi_tiles/a.glb",
+Cesium.Matrix4.multiplyByMatrix3(
+  modelMatrix,
+  rotation,
+  modelMatrix
+);
 
-      modelMatrix:
-        Cesium.Transforms.eastNorthUpToFixedFrame(origin),
 
-      scale: 1.0
+const model = await Cesium.Model.fromGltfAsync({
 
-    });
+  url: "/assets/delhi_tiles/F.glb",
+
+  modelMatrix: modelMatrix,
+
+  scale: 1.0
+
+});
 
 
     viewer.scene.primitives.add(model);
 
 
-    await new Promise<void>((resolve)=>{
+    await new Promise<void>((resolve) => {
 
-      model.readyEvent.addEventListener(()=>resolve());
+      model.readyEvent.addEventListener(() => resolve());
 
     });
 
@@ -52,11 +63,11 @@ export class BuildingLayer {
         duration: 2,
 
         offset:
-        new Cesium.HeadingPitchRange(
-          0,
-          Cesium.Math.toRadians(-45),
-          model.boundingSphere.radius * 3
-        )
+          new Cesium.HeadingPitchRange(
+            0,
+            Cesium.Math.toRadians(-45),
+            model.boundingSphere.radius * 3
+          )
       }
     );
 

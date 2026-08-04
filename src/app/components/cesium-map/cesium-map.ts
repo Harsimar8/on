@@ -158,11 +158,11 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
     );
 
 
-    this.viewer.camera.setView({
+   this.viewer.camera.setView({
   destination: Cesium.Cartesian3.fromDegrees(
-    103.898,
-    1.34639,
-    5000
+    103.848,
+    1.2971,
+    300
   )
 });
     console.log(
