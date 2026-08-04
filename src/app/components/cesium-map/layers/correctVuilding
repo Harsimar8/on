@@ -36,8 +36,6 @@ export class BuildingLayer {
     //
     tileset.modelMatrix = transform;
 
-    tileset.style = new Cesium.Cesium3DTileStyle({ color: "color('#B55239')" });
-
 
 
     viewer.scene.primitives.add(
