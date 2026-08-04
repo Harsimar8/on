@@ -2,156 +2,61 @@ import * as Cesium from "cesium";
 
 export class BuildingLayer {
 
-  static async load(viewer: Cesium.Viewer): Promise<void> {
+static async load(viewer: Cesium.Viewer): Promise<void> {
 
 
-    console.log("========== 3D TILES TEST ==========");
+console.log("========== GLB TEST ==========");
 
+const origin = Cesium.Cartesian3.fromDegrees(
+  103.84797440,
+  1.29709880,
+  0
+);
 
-    const tileset =
-      await Cesium.Cesium3DTileset.fromUrl(
-        "/assets/test_tiles/tileset.json"
-      );
+const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
 
+// Rotate -90 degrees around Z axis
+const rotation = Cesium.Matrix3.fromRotationZ(
+  Cesium.Math.toRadians(-90)
+);
 
-    //
-    // YOUR C++ ORIGIN
-    //
-    const origin =
-      Cesium.Cartesian3.fromDegrees(
-        103.84797440,
-        1.29709880,
-        0
-      );
+Cesium.Matrix4.multiplyByMatrix3(
+  modelMatrix,
+  rotation,
+  modelMatrix
+);
 
+const model = await Cesium.Model.fromGltfAsync({
+  url: "/assets/delhi_tiles/f1000.glb",
+  modelMatrix: modelMatrix,
+  scale: 1.0,
+  color: Cesium.Color.fromCssColorString("#B55239")
+});
 
-    const transform =
-      Cesium.Transforms.eastNorthUpToFixedFrame(
-        origin
-      );
+viewer.scene.primitives.add(model);
 
+await new Promise<void>((resolve) => {
+  model.readyEvent.addEventListener(() => resolve());
+});
 
-    //
-    // apply local mesh -> Earth position
-    //
-    tileset.modelMatrix = transform;
+console.log("GLB loaded");
+console.log("Bounding sphere:", model.boundingSphere.radius);
 
-    tileset.style = new Cesium.Cesium3DTileStyle({ color: "color('#B55239')" });
-
-
-
-    viewer.scene.primitives.add(
-      tileset
-    );
-
-
-    await viewer.zoomTo(
-      tileset
-    );
-
-
-    console.log("Tileset loaded");
-
-
-    console.log(
-      "Bounding:",
-      tileset.boundingSphere.radius
-    );
-
-
-    console.log("==============================");
-
-
+viewer.camera.flyToBoundingSphere(
+  model.boundingSphere,
+  {
+    duration: 2,
+    offset: new Cesium.HeadingPitchRange(
+      0,
+      Cesium.Math.toRadians(-45),
+      model.boundingSphere.radius * 3
+    )
   }
+);
+
+console.log("==============================");
+
 
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import * as Cesium from "cesium";
-
-// export class BuildingLayer {
-
-//   static async load(viewer: Cesium.Viewer): Promise<void> {
-
-
-//     console.log("========== 3D TILES TEST ==========");
-
-
-//     const tileset =
-//       await Cesium.Cesium3DTileset.fromUrl(
-//         "/assets/test_tiles/tileset.json"
-//       );
-
-
-//     //
-//     // YOUR C++ ORIGIN
-//     //
-//     const origin =
-//       Cesium.Cartesian3.fromDegrees(
-//         103.84797440,
-//         1.29709880,
-//         0
-//       );
-
-
-//     const transform =
-//       Cesium.Transforms.eastNorthUpToFixedFrame(
-//         origin
-//       );
-
-
-//     //
-//     // apply local mesh -> Earth position
-//     //
-//     tileset.modelMatrix = transform;
-
-
-// tileset.style = new Cesium.Cesium3DTileStyle({ color: "color('#d8c3a5')" });
-//     viewer.scene.primitives.add(
-//       tileset
-//     );
-
-
-//     await viewer.zoomTo(
-//       tileset
-//     );
-
-
-//     console.log("Tileset loaded");
-
-
-//     console.log(
-//       "Bounding:",
-//       tileset.boundingSphere.radius
-//     );
-
-
-//     console.log("==============================");
-
-
-//   }
-
-// }
+}
