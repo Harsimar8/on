@@ -14,9 +14,8 @@ export class BuildingLayer {
       );
 
 
-    //
-    // YOUR C++ ORIGIN
-    //
+    
+    
     const origin =
       Cesium.Cartesian3.fromDegrees(
         103.84797440,
@@ -31,9 +30,8 @@ export class BuildingLayer {
       );
 
 
-    //
-    // apply local mesh -> Earth position
-    //
+    
+    
     tileset.modelMatrix = transform;
 
 
