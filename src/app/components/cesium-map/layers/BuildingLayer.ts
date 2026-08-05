@@ -1,67 +1,147 @@
+// import * as Cesium from "cesium";
+
+// export class BuildingLayer {
+
+//   static async load(viewer: Cesium.Viewer): Promise<void> {
+
+//     console.log("========== GLB TEST ==========");
+
+
+//     // Your C++ origin
+//     const origin = Cesium.Cartesian3.fromDegrees(
+//       103.84797440,
+//       1.29709880,
+//       0
+//     );
+
+//     const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
+
+// const rotation = Cesium.Matrix3.fromRotationZ(
+//   Cesium.Math.toRadians(-90)
+// );
+
+// Cesium.Matrix4.multiplyByMatrix3(
+//   modelMatrix,
+//   rotation,
+//   modelMatrix
+// );
+
+
+// const model = await Cesium.Model.fromGltfAsync({
+
+//   url: "/assets/delhi_tiles/DD.glb",
+
+//   modelMatrix: modelMatrix,
+
+//   scale: 1.0
+
+// });
+
+
+//     viewer.scene.primitives.add(model);
+
+
+//     await new Promise<void>((resolve) => {
+
+//       model.readyEvent.addEventListener(() => resolve());
+
+//     });
+
+
+//     console.log("GLB loaded");
+
+
+//     console.log(
+//       "Bounding sphere:",
+//       model.boundingSphere.radius
+//     );
+
+
+//     viewer.camera.flyToBoundingSphere(
+//       model.boundingSphere,
+//       {
+//         duration: 2,
+
+//         offset:
+//           new Cesium.HeadingPitchRange(
+//             0,
+//             Cesium.Math.toRadians(-45),
+//             model.boundingSphere.radius * 3
+//           )
+//       }
+//     );
+
+
+//     console.log("==============================");
+
+//   }
+
+// }
+
+
+
+
+
+
 import * as Cesium from "cesium";
 
 export class BuildingLayer {
 
   static async load(viewer: Cesium.Viewer): Promise<void> {
 
+    console.log("========== GLB TEST ==========");
 
-    console.log("========== 3D TILES TEST ==========");
+    // Exact origin printed by your C++ exporter
+    const origin = Cesium.Cartesian3.fromDegrees(
+      78.04386500,   // longitude
+      30.34014610,   // latitude
+      0
+    );
 
+    const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
 
-    const tileset =
-      await Cesium.Cesium3DTileset.fromUrl(
-        "/assets/test_tiles/tileset.json"
-      );
+    // Keep the same rotation you were using
+    const rotation = Cesium.Matrix3.fromRotationZ(
+      Cesium.Math.toRadians(-90)
+    );
 
+    Cesium.Matrix4.multiplyByMatrix3(
+      modelMatrix,
+      rotation,
+      modelMatrix
+    );
 
-      tileset.style = new Cesium.Cesium3DTileStyle({
-      color: "color('#B22222')" // Firebrick (brick red)
+    const model = await Cesium.Model.fromGltfAsync({
+      url: "/assets/delhi_tiles/DD3.glb",
+      modelMatrix: modelMatrix,
+      scale: 1.0
     });
 
+    viewer.scene.primitives.add(model);
 
-    
-    
-    const origin =
-      Cesium.Cartesian3.fromDegrees(
-        103.84797440,
-        1.29709880,
-        0
-      );
+    await new Promise<void>((resolve) => {
+      model.readyEvent.addEventListener(() => resolve());
+    });
 
-
-    const transform =
-      Cesium.Transforms.eastNorthUpToFixedFrame(
-        origin
-      );
-
-
-    
-    
-    tileset.modelMatrix = transform;
-
-
-
-    viewer.scene.primitives.add(
-      tileset
-    );
-
-
-    await viewer.zoomTo(
-      tileset
-    );
-
-
-    console.log("Tileset loaded");
-
-
+    console.log("GLB loaded");
     console.log(
-      "Bounding:",
-      tileset.boundingSphere.radius
+      "Bounding sphere:",
+      model.boundingSphere.radius
     );
 
+    viewer.camera.flyToBoundingSphere(
+      model.boundingSphere,
+      {
+        duration: 2,
+        offset: new Cesium.HeadingPitchRange(
+          0,
+          Cesium.Math.toRadians(-45),
+          model.boundingSphere.radius * 3
+        )
+      }
+    );
 
     console.log("==============================");
-
 
   }
 

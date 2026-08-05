@@ -1,0 +1,54 @@
+import * as Cesium from "cesium";
+
+export class BuildingLayer {
+
+  static async load(viewer: Cesium.Viewer): Promise<void> {
+
+    console.log("========== DEHRADUN GLB TEST ==========");
+
+    const origin = Cesium.Cartesian3.fromDegrees(
+      78.04386500,
+      30.34014610,
+      0
+    );
+
+    const enu = Cesium.Transforms.eastNorthUpToFixedFrame(origin);
+
+    const rotation = Cesium.Matrix3.fromRotationX(
+      Cesium.Math.toRadians(-90)
+    );
+
+    const rotation4 = Cesium.Matrix4.fromRotationTranslation(rotation);
+
+    const modelMatrix = Cesium.Matrix4.multiply(
+      enu,
+      rotation4,
+      new Cesium.Matrix4()
+    );
+
+    const model = await Cesium.Model.fromGltfAsync({
+      url: "assets/delhi_tiles/DD.glb",
+      modelMatrix,
+      scale: 1.0
+    });
+
+    viewer.scene.primitives.add(model);
+
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromDegrees(
+        78.04386500,
+        30.34014610,
+        800.0
+      ),
+      orientation: {
+        heading: 0.0,
+        pitch: Cesium.Math.toRadians(-45),
+        roll: 0.0
+      }
+    });
+
+    console.log("GLB loaded");
+    console.log("===============================");
+  }
+
+}

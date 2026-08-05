@@ -157,13 +157,17 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
       }
     );
 
-
-   this.viewer.camera.setView({
+this.viewer.camera.setView({
   destination: Cesium.Cartesian3.fromDegrees(
-    103.848,
-    1.2971,
-    300
-  )
+    78.04386500,   // longitude
+    30.34014610,   // latitude
+    800            // camera height in meters
+  ),
+  orientation: {
+    heading: 0.0,
+    pitch: Cesium.Math.toRadians(-45),
+    roll: 0.0
+  }
 });
     console.log(
       this.viewer.scene.screenSpaceCameraController.enableZoom
