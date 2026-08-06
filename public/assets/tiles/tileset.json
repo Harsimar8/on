@@ -1,0 +1,544 @@
+{
+  "asset": { "version": "1.1" },
+  "geometricError": 1000,
+  "root": {
+    "boundingVolume": {
+      "box": [333.605,5.99999,57.73, 497.055,0,0, 0,6.00001,0, 0,0,265.831]
+    },
+    "geometricError": 100,
+    "refine": "REPLACE",
+    "children": [
+      {
+        "boundingVolume": {
+          "box": [572.516,4.99998,-205.134, 3.7135,0,0, 0,5,0, 0,0,2.967]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_5_-3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-130.924,4.99999,-138.972, 31.1901,0,0, 0,5,0, 0,0,21.9075]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-2_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-55.612,4.99999,-131.296, 49.934,0,0, 0,5,0, 0,0,34.8595]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-1_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [43.4108,4.99999,-136.528, 22.0248,0,0, 0,5,0, 0,0,12.4175]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_0_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [141.314,4.99999,-97.0871, 69.3648,0,0, 0,5,0, 0,0,47.1269]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_1_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [228.91,2.99999,-120.937, 22.3805,0,0, 0,3,0, 0,0,21.8407]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_2_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [365.478,4.99999,-140.017, 39.4425,0,0, 0,5,0, 0,0,35.1435]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_3_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [425.053,4.99999,-124.221, 21.3235,0,0, 0,5,0, 0,0,26.2936]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_4_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [589.419,4.99999,-148.155, 20.6175,0,0, 0,5,0, 0,0,59.9457]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_5_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [661.446,4.99999,-134.808, 42.455,0,0, 0,5,0, 0,0,51.2292]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_6_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [752.509,4.99999,-185.325, 54.594,0,0, 0,5,0, 0,0,10.2525]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_7_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [815.374,4.99999,-142.896, 7.96451,0,0, 0,5,0, 0,0,8.4995]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_8_-2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-133.427,5,-52.0029, 25.1905,0,0, 0,5,0, 0,0,44.7115]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-2_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-44.6648,6,-40.1532, 67.0403,0,0, 0,6,0, 0,0,62.8178]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-1_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [56.3278,6,-49.6652, 62.5822,0,0, 0,6,0, 0,0,44.3552]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_0_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [143.827,5.99999,-62.8898, 71.8773,0,0, 0,6,0, 0,0,59.2162]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_1_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [252.481,5,-58.9882, 61.602,0,0, 0,5,0, 0,0,58.1088]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_2_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [347.372,5,-31.5202, 63.0915,0,0, 0,5,0, 0,0,44.1772]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_3_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [440.626,5,-44.049, 51.25,0,0, 0,5,0, 0,0,56.706]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_4_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [557.048,5,-43.5426, 53.316,0,0, 0,5,0, 0,0,51.7024]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_5_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [643.461,5,-44.539, 53.513,0,0, 0,5,0, 0,0,45.4072]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_6_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [737.579,5,-54.3685, 36.7045,0,0, 0,5,0, 0,0,41.7003]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_7_-1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-117.781,5,31.1527, 45.6686,0,0, 0,5,0, 0,0,43.5983]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-2_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-52.6242,5,60.1346, 33.6977,0,0, 0,5,0, 0,0,42.6574]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-1_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [44.991,6,26.1045, 59.815,0,0, 0,6,0, 0,0,39.0064]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_0_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [273.185,5.00001,73.8549, 34.644,0,0, 0,5,0, 0,0,28.4921]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_2_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [348.122,5,45.7637, 62.342,0,0, 0,5,0, 0,0,57.5524]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_3_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [440.915,5,43.0027, 51.3275,0,0, 0,5,0, 0,0,45.2403]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_4_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [547.926,5,46.0249, 38.9385,0,0, 0,5,0, 0,0,56.7561]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_5_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [650.517,5,58.7212, 62.6155,0,0, 0,5,0, 0,0,54.3908]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_6_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [760.22,5,48.7747, 44.9335,0,0, 0,5,0, 0,0,60.4633]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_7_0.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-130.439,5.00001,133.144, 32.3093,0,0, 0,5,0, 0,0,50.9564]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-2_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-54.0604,5.00001,157.367, 52.8306,0,0, 0,5,0, 0,0,50.3775]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-1_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [164.434,5.00001,128.101, 10.8515,0,0, 0,5,0, 0,0,10.737]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_1_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [234.731,5.00001,149.536, 26.9535,0,0, 0,5,0, 0,0,53.5114]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_2_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [340.657,5.00001,167.252, 42.263,0,0, 0,5,0, 0,0,38.366]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_3_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [444.675,5.00001,147.326, 58.1725,0,0, 0,5.00001,0, 0,0,67.098]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_4_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [556.587,5.00001,147.387, 49.127,0,0, 0,5,0, 0,0,54.6912]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_5_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [648.245,5.00001,151.172, 61.1505,0,0, 0,5,0, 0,0,46.654]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_6_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [741.783,5.00001,151.122, 42.1955,0,0, 0,5,0, 0,0,60.2741]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_7_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [814.39,5.00001,114.887, 16.27,0,0, 0,5,0, 0,0,18.3176]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_8_1.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-137.644,5.00002,276.623, 11.692,0,0, 0,5,0, 0,0,9.15599]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-2_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-43.3387,5.00002,239.894, 45.5772,0,0, 0,5,0, 0,0,47.2885]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-1_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [50.9477,5.00002,256.524, 50.2463,0,0, 0,5,0, 0,0,55.3925]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_0_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [159.928,5.00002,241.14, 44.0835,0,0, 0,5,0, 0,0,49.782]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_1_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [232.215,5.00002,271.625, 41.7295,0,0, 0,5,0, 0,0,31.7315]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_2_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [356.706,5.00002,246.377, 63.308,0,0, 0,5,0, 0,0,59.7285]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_3_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [474.891,5.00002,245.003, 28.188,0,0, 0,5,0, 0,0,57.741]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_4_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [552.705,5.00002,246.984, 53.0375,0,0, 0,5,0, 0,0,51.0845]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_5_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [652.204,5.00002,240.373, 48.229,0,0, 0,5,0, 0,0,33.2845]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_6_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [740,5.00002,239.526, 40.4135,0,0, 0,5,0, 0,0,33.5405]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_7_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [809.98,5.00002,266.527, 11.0245,0,0, 0,5,0, 0,0,18.8965]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_8_2.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-111.685,5.00002,303.246, 20.7136,0,0, 0,5,0, 0,0,15.5065]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-2_3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [-42.8583,5.00002,313.715, 27.9477,0,0, 0,5,0, 0,0,9.84601]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_-1_3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [78.4967,5.00002,307.036, 12.5424,0,0, 0,5,0, 0,0,11.416]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_0_3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [241.274,5.00002,304.103, 29.163,0,0, 0,5,0, 0,0,15.3735]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_2_3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [346.359,5.00002,303.941, 15.04,0,0, 0,5,0, 0,0,11.371]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_3_3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [603.898,5.00002,304.631, 13.6905,0,0, 0,5,0, 0,0,13.798]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_6_3.glb"
+        }
+      },
+      {
+        "boundingVolume": {
+          "box": [741.653,5.00002,303.907, 52.711,0,0, 0,5,0, 0,0,11.8275]
+        },
+        "geometricError": 0,
+        "content": {
+          "uri": "tile_7_3.glb"
+        }
+      }
+    ]
+  }
+}

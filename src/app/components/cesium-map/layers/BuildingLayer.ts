@@ -7,7 +7,7 @@ export class BuildingLayer {
     console.log("========== DEHRADUN 3D TILES TEST ==========");
 
     const tileset = await Cesium.Cesium3DTileset.fromUrl(
-      "/assets/test_tiles/tileset.json"
+      "/assets/tiles/tileset.json"
     );
 
     // Exact origin printed by your C++ exporter
@@ -20,6 +20,11 @@ export class BuildingLayer {
     // Apply ONLY the translation (no rotation)
     tileset.modelMatrix =
       Cesium.Transforms.eastNorthUpToFixedFrame(origin);
+
+    // Brick red color
+    tileset.style = new Cesium.Cesium3DTileStyle({
+      color: "color('#B22222')" // Firebrick / brick red
+    });
 
     viewer.scene.primitives.add(tileset);
 
