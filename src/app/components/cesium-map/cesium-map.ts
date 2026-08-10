@@ -136,7 +136,8 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
       this.cesiumContainer.nativeElement,
       {
 
-        terrain: undefined,
+        terrain: Cesium.Terrain.fromWorldTerrain(),
+
 
         animation: false,
         timeline: false,
@@ -188,24 +189,10 @@ this.viewer.camera.setView({
       intensity: 1.6
     });
 
- this.viewer.scene.globe.depthTestAgainstTerrain = false;
+ this.viewer.scene.globe.depthTestAgainstTerrain = true;
    
 
-//     await RoadLayer.load(this.viewer);
-//     setTimeout(async () => {
-//       await VegetationLayer.load(
-//     this.viewer,
-//     this.isPointInPolygon.bind(this)
-// );
-//     },2000);
-    
-
 await BuildingLayer.load(this.viewer);
-
-
-    // await this.viewer.zoomTo(buildingDataSource);
-
-
 
 
     this.renderer = new CesiumEntityRenderer(
