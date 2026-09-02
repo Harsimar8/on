@@ -158,6 +158,11 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
       }
     );
 
+    console.log(
+  "CESIUM TERRAIN PROVIDER:",
+  this.viewer.terrainProvider
+);
+
 this.viewer.camera.setView({
   destination: Cesium.Cartesian3.fromDegrees(
     78.04386500,   // longitude

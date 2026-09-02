@@ -28,3 +28,4 @@ export class BuildingLayer {
     console.log("Bounding radius:", tileset.boundingSphere.radius);
   }
 }
+
