@@ -21,10 +21,7 @@ export class CesiumEntityRenderer {
 
     render(entities: Entity[]): void {
 
-        console.log(
-            "CESIUM RENDER CALLED",
-            entities.length
-        );
+
 
         const filter = this.teamFilterService.cesiumFilter();
 
@@ -48,21 +45,13 @@ export class CesiumEntityRenderer {
 
             this.drawTeamDot(entity);
 
+            this.drawCoverage(entity);
 
-
-
-            /*
-             * TEST TERRAIN BLOCKING
-             */
 
             if (
                 entity.definition.entityType === "RadarSite"
             ) {
-
-                this.drawTerrainRadarCone(
-                    entity
-                );
-
+                void this.drawTerrainRadarCone(entity);
             }
 
         }
@@ -83,53 +72,53 @@ export class CesiumEntityRenderer {
 
     }
 
-   private async drawTerrainRadarCone(
+    private async drawTerrainRadarCone(
     entity: Entity
 ): Promise<void> {
 
     /*
-     * ---------------------------------------------------------
-     * RADAR TEST SETTINGS
-     * ---------------------------------------------------------
+     * TEMPORARY TEST SETTINGS
      */
 
-    const range = 100000; // 100 km
+    const range = 20000; // 100 km
 
-    this.viewer.scene.globe.depthTestAgainstTerrain = true;
+    const heading = 0;
+
     const horizontalAngle = 360;
 
     const verticalAngle = 0;
 
-    const heading = 0;
-
-    const horizontalRays = 360;
+    const horizontalRays = 36;
 
     const verticalRays = 1;
 
 
     /*
-     * ---------------------------------------------------------
      * Radar position
-     * ---------------------------------------------------------
      */
 
     const radarPosition =
         Cesium.Cartesian3.fromDegrees(
+
             entity.position.longitude,
+
             entity.position.latitude,
+
             entity.position.altitude
+
         );
 
 
     /*
-     * ---------------------------------------------------------
-     * Calculate FIRST obstruction for every ray.
-     * ---------------------------------------------------------
+     * Calculate where each ray
+     * first hits terrain.
      */
 
     const results =
-       await CesiumRadarTerrainCone.calculate(
+        await CesiumRadarTerrainCone.calculate(
+
             this.viewer,
+
             {
                 longitude:
                     entity.position.longitude,
@@ -152,19 +141,15 @@ export class CesiumEntityRenderer {
 
                 verticalRays
             }
+
         );
 
 
     /*
-     * ---------------------------------------------------------
-     * Draw exactly ONE line per ray.
+     * Draw one line per ray.
      *
-     * IMPORTANT:
-     *
-     * The endpoint is the FIRST obstruction.
-     *
-     * There is NEVER another segment after it.
-     * ---------------------------------------------------------
+     * The line ends at the FIRST
+     * terrain collision.
      */
 
     for (const result of results) {
@@ -172,33 +157,34 @@ export class CesiumEntityRenderer {
         this.viewer.entities.add({
 
             polyline: {
+    positions: [
+        radarPosition,
+        result.endPosition
+    ],
 
-                positions: [
-                    radarPosition,
-                    result.endPosition
-                ],
+    width: 2,
 
-                width: 2,
+    arcType: Cesium.ArcType.NONE,
 
-                material:
-                    result.blocked
-                        ? Cesium.Color.CYAN
-                            .withAlpha(0.9)
-                        : Cesium.Color.CYAN
-                            .withAlpha(0.45)
+    material: result.blocked
+        ? Cesium.Color.CYAN.withAlpha(0.9)
+        : Cesium.Color.CYAN.withAlpha(0.45),
 
-            }
+    clampToGround: false,
+
+    depthFailMaterial:
+        Cesium.Color.TRANSPARENT
+}
 
         });
+
     }
 
 
-   
-    
-
-
     this.viewer.scene.requestRender();
+
 }
+
     private drawRadar(entity: Entity): void {
 
         const selected =

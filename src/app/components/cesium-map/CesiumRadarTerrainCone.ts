@@ -28,6 +28,8 @@ export interface RayResult {
 
 export class CesiumRadarTerrainCone {
 
+    private static readonly RAY_BATCH_SIZE = 8;
+
     static async calculate(
         viewer: Cesium.Viewer,
         options: RadarTerrainConeOptions
@@ -46,207 +48,156 @@ export class CesiumRadarTerrainCone {
                 options.altitude
             );
 
-        const rays =
-            this.generateRays(
-                radarPosition,
-                options.heading,
-                options.horizontalAngle,
-                options.verticalAngle,
-                horizontalRays,
-                verticalRays
-            );
+        const rays = this.generateRays(
+            radarPosition,
+            options.heading,
+            options.horizontalAngle,
+            options.verticalAngle,
+            horizontalRays,
+            verticalRays
+        );
 
         const results: RayResult[] = [];
 
         /*
-         * IMPORTANT:
-         * Do all ray picks asynchronously.
+         * Do not fire hundreds of terrain operations
+         * simultaneously.
          */
-        const rayPromises = rays.map(async (ray) => {
+        for (
+            let i = 0;
+            i < rays.length;
+            i += this.RAY_BATCH_SIZE
+        ) {
 
-            const cesiumRay =
-                new Cesium.Ray(
-                    ray.start,
-                    ray.direction
+            const batch =
+                rays.slice(
+                    i,
+                    i + this.RAY_BATCH_SIZE
                 );
 
-            const maxPoint =
-                Cesium.Ray.getPoint(
-                    cesiumRay,
-                    options.range
+            const batchResults =
+                await Promise.all(
+                    batch.map(ray =>
+                        this.calculateSingleRay(
+                            viewer,
+                            ray,
+                            options.range
+                        )
+                    )
                 );
 
-            const hit =
-                await this.findNearestIntersection(
-                    viewer,
-                    cesiumRay,
-                    options.range
-                );
-
-            if (hit) {
-                return {
-                    ray,
-                    distance: hit.distance,
-                    endPosition: hit.position,
-                    blocked: true
-                };
-            }
-
-            return {
-                ray,
-                distance: options.range,
-                endPosition: maxPoint,
-                blocked: false
-            };
-        });
-
-        const resolved =
-            await Promise.all(rayPromises);
-
-        results.push(...resolved);
+            results.push(...batchResults);
+        }
 
         return results;
     }
 
-    private static findNearestIntersection(
-    viewer: Cesium.Viewer,
-    ray: Cesium.Ray,
-    maxRange: number
-): {
-    position: Cesium.Cartesian3;
-    distance: number;
-} | null {
+    private static async calculateSingleRay(
+        viewer: Cesium.Viewer,
+        ray: RadarRay,
+        range: number
+    ): Promise<RayResult> {
 
-    /*
-     * Test the ray progressively.
-     *
-     * IMPORTANT:
-     * We don't use one giant globe.pick().
-     * We test points along the ray and compare their
-     * height against the actual terrain height.
-     */
-
-    const STEP = 250.0; // meters
-
-    const ellipsoid =
-        viewer.scene.globe.ellipsoid;
-
-    let previousDistance = 0;
-
-    for (
-        let distance = STEP;
-        distance <= maxRange;
-        distance += STEP
-    ) {
-
-        const point =
-            Cesium.Ray.getPoint(
+        /*
+         * FIRST try Cesium's actual terrain intersection.
+         */
+        const hit =
+            this.getTerrainHit(
+                viewer,
                 ray,
-                distance
+                range
             );
 
-        const cartographic =
-            ellipsoid.cartesianToCartographic(
-                point
-            );
+        if (hit) {
 
-        if (!cartographic) {
-            continue;
+            return {
+                ray,
+                distance: hit.distance,
+                endPosition: hit.position,
+                blocked: true
+            };
         }
 
         /*
-         * Terrain surface directly below this point.
+         * No terrain in front of the ray.
+         * Therefore it travels the complete range.
          */
-        const terrainHeight =
-            viewer.scene.globe.getHeight(
-                cartographic
+        const end =
+            Cesium.Ray.getPoint(
+                new Cesium.Ray(
+                    ray.start,
+                    ray.direction
+                ),
+                range
             );
 
-        if (
-            terrainHeight !== undefined &&
-            terrainHeight !== null
-        ) {
-
-            /*
-             * Height of the radar ray.
-             */
-            const rayHeight =
-                cartographic.height;
-
-            /*
-             * If terrain has reached/crossed the ray,
-             * THIS is the obstruction.
-             */
-            if (
-                terrainHeight >= rayHeight
-            ) {
-
-                /*
-                 * Binary-search the previous 250 m
-                 * interval to get a much more accurate
-                 * obstruction point.
-                 */
-                let low = previousDistance;
-                let high = distance;
-
-                for (let i = 0; i < 8; i++) {
-
-                    const mid =
-                        (low + high) / 2;
-
-                    const midPoint =
-                        Cesium.Ray.getPoint(
-                            ray,
-                            mid
-                        );
-
-                    const midCartographic =
-                        ellipsoid.cartesianToCartographic(
-                            midPoint
-                        );
-
-                    if (!midCartographic) {
-                        break;
-                    }
-
-                    const midTerrain =
-                        viewer.scene.globe.getHeight(
-                            midCartographic
-                        );
-
-                    if (
-                        midTerrain !== undefined &&
-                        midTerrain !== null &&
-                        midTerrain >=
-                            midCartographic.height
-                    ) {
-                        high = mid;
-                    } else {
-                        low = mid;
-                    }
-                }
-
-                const hitDistance =
-                    high;
-
-                const hitPosition =
-                    Cesium.Ray.getPoint(
-                        ray,
-                        hitDistance
-                    );
-
-                return {
-                    position: hitPosition,
-                    distance: hitDistance
-                };
-            }
-        }
-
-        previousDistance = distance;
+        return {
+            ray,
+            distance: range,
+            endPosition: end,
+            blocked: false
+        };
     }
 
-    return null;
-}
+    /*
+     * Find the FIRST terrain intersection.
+     */
+    private static getTerrainHit(
+        viewer: Cesium.Viewer,
+        radarRay: RadarRay,
+        maxRange: number
+    ): {
+        position: Cesium.Cartesian3;
+        distance: number;
+    } | null {
+
+        const scene = viewer.scene;
+
+        const ray =
+            new Cesium.Ray(
+                radarRay.start,
+                radarRay.direction
+            );
+
+        /*
+         * Cesium intersects the ray with the
+         * currently rendered terrain.
+         */
+        const hit =
+            scene.globe.pick(
+                ray,
+                scene
+            );
+
+        if (!hit) {
+            return null;
+        }
+
+        /*
+         * Distance from radar to terrain.
+         */
+        const distance =
+            Cesium.Cartesian3.distance(
+                radarRay.start,
+                hit
+            );
+
+        /*
+         * Ignore anything behind the radar
+         * or outside the radar range.
+         */
+        if (
+            distance <= 0 ||
+            distance > maxRange
+        ) {
+            return null;
+        }
+
+        return {
+            position: hit,
+            distance
+        };
+    }
 
     private static generateRays(
         radarPosition: Cesium.Cartesian3,
@@ -260,9 +211,7 @@ export class CesiumRadarTerrainCone {
         const rays: RadarRay[] = [];
 
         const headingRad =
-            Cesium.Math.toRadians(
-                heading
-            );
+            Cesium.Math.toRadians(heading);
 
         const halfHorizontal =
             Cesium.Math.toRadians(
@@ -292,10 +241,10 @@ export class CesiumRadarTerrainCone {
         ) {
 
             /*
-             * h / horizontalRays is intentional.
+             * IMPORTANT:
              *
-             * It avoids creating the same ray twice
-             * at 0° and 360°.
+             * Do not duplicate the 360-degree
+             * starting ray at the end.
              */
             const horizontalT =
                 horizontalRays === 1
@@ -306,8 +255,9 @@ export class CesiumRadarTerrainCone {
                 headingRad -
                 halfHorizontal +
                 horizontalT *
-                halfHorizontal *
-                2;
+                Cesium.Math.toRadians(
+                    horizontalAngle
+                );
 
             for (
                 let v = 0;
@@ -318,8 +268,9 @@ export class CesiumRadarTerrainCone {
                 const verticalT =
                     verticalRays === 1
                         ? 0.5
-                        : v /
-                        (verticalRays - 1);
+                        : v / (
+                            verticalRays - 1
+                        );
 
                 const elevation =
                     -halfVertical +
@@ -327,6 +278,9 @@ export class CesiumRadarTerrainCone {
                     halfVertical *
                     2;
 
+                /*
+                 * Local ENU direction.
+                 */
                 const localDirection =
                     new Cesium.Cartesian3(
                         Math.sin(azimuth) *
