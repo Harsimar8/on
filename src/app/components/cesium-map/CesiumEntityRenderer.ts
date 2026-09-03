@@ -45,7 +45,7 @@ export class CesiumEntityRenderer {
 
             this.drawTeamDot(entity);
 
-            this.drawCoverage(entity);
+
 
 
             if (
@@ -77,10 +77,9 @@ export class CesiumEntityRenderer {
 ): Promise<void> {
 
     /*
-     * TEMPORARY TEST SETTINGS
+     * TEST SETTINGS
      */
-
-    const range = 20000; // 100 km
+    const range = 20000; // 20 km
 
     const heading = 0;
 
@@ -92,28 +91,26 @@ export class CesiumEntityRenderer {
 
     const verticalRays = 1;
 
-
     /*
-     * Radar position
+     * Radar position.
      */
-
     const radarPosition =
         Cesium.Cartesian3.fromDegrees(
-
             entity.position.longitude,
-
             entity.position.latitude,
-
             entity.position.altitude
-
         );
 
-
     /*
-     * Calculate where each ray
-     * first hits terrain.
+     * Calculate terrain-blocked rays.
+     *
+     * IMPORTANT:
+     *
+     * CesiumRadarTerrainCone now uses
+     * sampleTerrainMostDetailed().
+     *
+     * NO globe.pick().
      */
-
     const results =
         await CesiumRadarTerrainCone.calculate(
 
@@ -141,48 +138,54 @@ export class CesiumEntityRenderer {
 
                 verticalRays
             }
-
         );
 
-
     /*
-     * Draw one line per ray.
+     * Draw each ray.
      *
-     * The line ends at the FIRST
-     * terrain collision.
+     * Each result has EXACTLY ONE endpoint.
+     *
+     * If terrain blocked it:
+     *
+     *     radar ───── X
+     *
+     * If nothing blocked it:
+     *
+     *     radar ───────────────→ range
      */
-
     for (const result of results) {
 
         this.viewer.entities.add({
 
             polyline: {
-    positions: [
-        radarPosition,
-        result.endPosition
-    ],
 
-    width: 2,
+                positions: [
+                    radarPosition,
+                    result.endPosition
+                ],
 
-    arcType: Cesium.ArcType.NONE,
+                width: 2,
 
-    material: result.blocked
-        ? Cesium.Color.CYAN.withAlpha(0.9)
-        : Cesium.Color.CYAN.withAlpha(0.45),
+                arcType:
+                    Cesium.ArcType.NONE,
 
-    clampToGround: false,
+                material: result.blocked
 
-    depthFailMaterial:
-        Cesium.Color.TRANSPARENT
-}
+                    ? Cesium.Color.CYAN
+                        .withAlpha(0.9)
 
+                    : Cesium.Color.CYAN
+                        .withAlpha(0.45),
+
+                clampToGround: false,
+
+                depthFailMaterial:
+                    Cesium.Color.TRANSPARENT
+            }
         });
-
     }
 
-
     this.viewer.scene.requestRender();
-
 }
 
     private drawRadar(entity: Entity): void {

@@ -130,14 +130,13 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
 
   async ngAfterViewInit(): Promise<void> {
 
-    this.viewer = new Cesium.Viewer(
+    const terrainProvider =
+    await Cesium.createWorldTerrainAsync();
 
-
-      this.cesiumContainer.nativeElement,
-      {
-
-        terrain: Cesium.Terrain.fromWorldTerrain(),
-
+this.viewer = new Cesium.Viewer(
+    this.cesiumContainer.nativeElement,
+    {
+        terrainProvider: terrainProvider,
 
         animation: false,
         timeline: false,
@@ -149,19 +148,35 @@ export class CesiumMap implements AfterViewInit, OnDestroy {
         fullscreenButton: true,
         infoBox: false,
         selectionIndicator: false,
-
         requestRenderMode: true,
         maximumRenderTimeChange: Infinity,
-
-
         terrainShadows: Cesium.ShadowMode.RECEIVE_ONLY,
-      }
-    );
-
-    console.log(
-  "CESIUM TERRAIN PROVIDER:",
-  this.viewer.terrainProvider
+    }
 );
+
+console.log(
+    "TERRAIN PROVIDER:",
+    terrainProvider
+);
+
+
+await new Promise<void>((resolve, reject) => {
+    if (terrain.ready) {
+        resolve();
+        return;
+    }
+
+    terrain.readyEvent.addEventListener(() => {
+        resolve();
+    });
+
+    terrain.errorEvent.addEventListener((error) => {
+        reject(error);
+    });
+});
+
+console.log("TERRAIN IS READY");
+console.log("TERRAIN PROVIDER:", terrain.provider);
 
 this.viewer.camera.setView({
   destination: Cesium.Cartesian3.fromDegrees(
