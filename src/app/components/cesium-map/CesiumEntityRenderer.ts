@@ -14,11 +14,11 @@ export class CesiumEntityRenderer {
 
     private readonly renderedEntities = new Set<string>();
     constructor(
-    private viewer: Cesium.Viewer,
-    private terrainProvider: Cesium.TerrainProvider,
-    private teamFilterService: TeamFilterService,
-    private editorState: EditorState
-) { }
+        private viewer: Cesium.Viewer,
+        private terrainProvider: Cesium.TerrainProvider,
+        private teamFilterService: TeamFilterService,
+        private editorState: EditorState
+    ) { }
 
     render(entities: Entity[]): void {
 
@@ -74,121 +74,121 @@ export class CesiumEntityRenderer {
     }
 
     private async drawTerrainRadarCone(
-    entity: Entity
-): Promise<void> {
+        entity: Entity
+    ): Promise<void> {
 
-    /*
-     * TEST SETTINGS
-     */
-    const range = 20000; // 20 km
+        /*
+         * TEST SETTINGS
+         */
+        const range = 20000; // 20 km
 
-    const heading = 0;
+        const heading = 0;
 
-    const horizontalAngle = 360;
+        const horizontalAngle = 360;
 
-    const verticalAngle = 0;
+        const verticalAngle = 0;
 
-    const horizontalRays = 36;
+        const horizontalRays = 36;
 
-    const verticalRays = 1;
+        const verticalRays = 1;
 
-    /*
-     * Radar position.
-     */
-    const radarPosition =
-        Cesium.Cartesian3.fromDegrees(
-            entity.position.longitude,
-            entity.position.latitude,
-            entity.position.altitude
-        );
+        /*
+         * Radar position.
+         */
+        const radarPosition =
+            Cesium.Cartesian3.fromDegrees(
+                entity.position.longitude,
+                entity.position.latitude,
+                entity.position.altitude
+            );
 
-    /*
-     * Calculate terrain-blocked rays.
-     *
-     * IMPORTANT:
-     *
-     * CesiumRadarTerrainCone now uses
-     * sampleTerrainMostDetailed().
-     *
-     * NO globe.pick().
-     */
-    const results =
-        await CesiumRadarTerrainCone.calculate(
+        /*
+         * Calculate terrain-blocked rays.
+         *
+         * IMPORTANT:
+         *
+         * CesiumRadarTerrainCone now uses
+         * sampleTerrainMostDetailed().
+         *
+         * NO globe.pick().
+         */
+        const results =
+            await CesiumRadarTerrainCone.calculate(
 
-            this.viewer,
-            this.terrainProvider,
+                this.viewer,
+                this.terrainProvider,
 
-            {
-                longitude:
-                    entity.position.longitude,
+                {
+                    longitude:
+                        entity.position.longitude,
 
-                latitude:
-                    entity.position.latitude,
+                    latitude:
+                        entity.position.latitude,
 
-                altitude:
-                    entity.position.altitude,
+                    altitude:
+                        entity.position.altitude,
 
-                range,
+                    range,
 
-                heading,
+                    heading,
 
-                horizontalAngle,
+                    horizontalAngle,
 
-                verticalAngle,
+                    verticalAngle,
 
-                horizontalRays,
+                    horizontalRays,
 
-                verticalRays
-            }
-        );
+                    verticalRays
+                }
+            );
 
-    /*
-     * Draw each ray.
-     *
-     * Each result has EXACTLY ONE endpoint.
-     *
-     * If terrain blocked it:
-     *
-     *     radar ───── X
-     *
-     * If nothing blocked it:
-     *
-     *     radar ───────────────→ range
-     */
-    for (const result of results) {
+        /*
+         * Draw each ray.
+         *
+         * Each result has EXACTLY ONE endpoint.
+         *
+         * If terrain blocked it:
+         *
+         *     radar ───── X
+         *
+         * If nothing blocked it:
+         *
+         *     radar ───────────────→ range
+         */
+        for (const result of results) {
 
-        this.viewer.entities.add({
+            this.viewer.entities.add({
 
-            polyline: {
+                polyline: {
 
-                positions: [
-                    radarPosition,
-                    result.endPosition
-                ],
+                    positions: [
+                        radarPosition,
+                        result.endPosition
+                    ],
 
-                width: 2,
+                    width: 2,
 
-                arcType:
-                    Cesium.ArcType.NONE,
+                    arcType:
+                        Cesium.ArcType.NONE,
 
-                material: result.blocked
+                    material: result.blocked
 
-                    ? Cesium.Color.CYAN
-                        .withAlpha(0.9)
+                        ? Cesium.Color.CYAN
+                            .withAlpha(0.9)
 
-                    : Cesium.Color.CYAN
-                        .withAlpha(0.45),
+                        : Cesium.Color.CYAN
+                            .withAlpha(0.45),
 
-                clampToGround: false,
+                    clampToGround: false,
 
-                depthFailMaterial:
-                    Cesium.Color.TRANSPARENT
-            }
-        });
+                    depthFailMaterial:
+                        Cesium.Color.TRANSPARENT
+                }
+            });
+        }
+
+        this.viewer.scene.requestRender();
     }
-
-    this.viewer.scene.requestRender();
-}
 
     private drawRadar(entity: Entity): void {
 
