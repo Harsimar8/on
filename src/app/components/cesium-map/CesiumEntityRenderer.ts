@@ -14,10 +14,11 @@ export class CesiumEntityRenderer {
 
     private readonly renderedEntities = new Set<string>();
     constructor(
-        private viewer: Cesium.Viewer,
-        private teamFilterService: TeamFilterService,
-        private editorState: EditorState
-    ) { }
+    private viewer: Cesium.Viewer,
+    private terrainProvider: Cesium.TerrainProvider,
+    private teamFilterService: TeamFilterService,
+    private editorState: EditorState
+) { }
 
     render(entities: Entity[]): void {
 
@@ -115,6 +116,7 @@ export class CesiumEntityRenderer {
         await CesiumRadarTerrainCone.calculate(
 
             this.viewer,
+            this.terrainProvider,
 
             {
                 longitude:

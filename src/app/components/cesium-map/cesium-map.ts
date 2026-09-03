@@ -160,23 +160,6 @@ console.log(
 );
 
 
-await new Promise<void>((resolve, reject) => {
-    if (terrain.ready) {
-        resolve();
-        return;
-    }
-
-    terrain.readyEvent.addEventListener(() => {
-        resolve();
-    });
-
-    terrain.errorEvent.addEventListener((error) => {
-        reject(error);
-    });
-});
-
-console.log("TERRAIN IS READY");
-console.log("TERRAIN PROVIDER:", terrain.provider);
 
 this.viewer.camera.setView({
   destination: Cesium.Cartesian3.fromDegrees(
@@ -217,7 +200,7 @@ await BuildingLayer.load(this.viewer);
 
     this.renderer = new CesiumEntityRenderer(
       this.viewer,
-
+       terrainProvider,
       this.teamFilterService,
       this.editorState
     );

@@ -37,9 +37,10 @@ export class CesiumRadarTerrainCone {
      * that ray ends permanently at that point.
      */
     static async calculate(
-        viewer: Cesium.Viewer,
-        options: RadarTerrainConeOptions
-    ): Promise<RadarTerrainRayResult[]> {
+    viewer: Cesium.Viewer,
+    terrainProvider: Cesium.TerrainProvider,
+    options: RadarTerrainConeOptions
+): Promise<RadarTerrainRayResult[]> {
 
         const {
             longitude,
@@ -66,13 +67,7 @@ export class CesiumRadarTerrainCone {
         /*
          * Terrain provider.
          */
-        const terrain = viewer.scene.terrain;
-
-if (!terrain || !terrain.ready) {
-    throw new Error("Cesium terrain is not ready.");
-}
-
-const terrainProvider = terrain.provider;
+        
 
         /*
          * ENU coordinate system around radar.
