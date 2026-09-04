@@ -2,8 +2,8 @@ import * as Cesium from "cesium";
 
 export interface Zone3DConfig {
     name: string;
-    maxRange: number;       // Max radius in meters
-    ceilingHeight: number;  // Height above radar site in meters
+    maxRange: number;       // Max range in meters
+    ceilingHeight: number;  // Ceiling above radar ground in meters
     color: Cesium.Color;
     wallAlpha: number;
     capAlpha: number;
@@ -12,39 +12,33 @@ export interface Zone3DConfig {
 export interface Radar3DOptions {
     longitude: number;
     latitude: number;
-    antennaMastHeight?: number; // Antenna elevation above ground (e.g. 25m)
-    numAzimuths?: number;       // Number of angles around 360 (72 = 5-degree steps)
+    antennaMastHeight?: number; // Height of antenna above ground (e.g. 25m)
+    numAzimuths?: number;       // Number of azimuth rays (72 = every 5 degrees)
     zones?: Zone3DConfig[];
 }
 
 export class Cesium3DRadarCoverage {
-    /**
-     * 3 Stacked 3D Zones:
-     * - Green: Low altitude (400m ceiling) -> stops at small hills
-     * - Yellow: Medium altitude (900m ceiling) -> passes over small hills, stops at medium peaks
-     * - Red: High altitude (1600m ceiling) -> passes over medium ridges, stops only at massive peaks
-     */
     public static readonly DEFAULT_3D_ZONES: Zone3DConfig[] = [
         {
-            name: "Low-Altitude Engagement (Green)",
+            name: "Low-Altitude (Green)",
             maxRange: 5000,
-            ceilingHeight: 400,
+            ceilingHeight: 400, // 400m ceiling
             color: Cesium.Color.fromCssColorString("#10B981"),
             wallAlpha: 0.35,
             capAlpha: 0.25
         },
         {
-            name: "Mid-Altitude Tracking (Yellow)",
+            name: "Mid-Altitude (Yellow)",
             maxRange: 12000,
-            ceilingHeight: 900,
+            ceilingHeight: 900, // 900m ceiling
             color: Cesium.Color.fromCssColorString("#F59E0B"),
             wallAlpha: 0.30,
             capAlpha: 0.20
         },
         {
-            name: "High-Altitude Early Warning (Red)",
+            name: "High-Altitude (Red/Pink)",
             maxRange: 20000,
-            ceilingHeight: 1600,
+            ceilingHeight: 1600, // 1600m ceiling
             color: Cesium.Color.fromCssColorString("#EF4444"),
             wallAlpha: 0.25,
             capAlpha: 0.15
@@ -52,7 +46,8 @@ export class Cesium3DRadarCoverage {
     ];
 
     /**
-     * Builds true 3D volumetric radar cylinders with independent altitude blocking.
+     * Builds true 3D volumetric radar cylinders with realistic 3D radar shadow.
+     * Behind a mountain, the cylinder bottom FLOATS in the air and never touches the valley bed!
      */
     static async create3DRadarZones(
         viewer: Cesium.Viewer,
@@ -71,7 +66,7 @@ export class Cesium3DRadarCoverage {
         const stepMeters = 250;
         const stepsPerRay = Math.ceil(maxOverallRange / stepMeters);
 
-        // 1. Gather coordinates to sample at fixed LOD Level 11 (camera-independent)
+        // 1. Collect points for terrain query
         const cartographics: Cesium.Cartographic[] = [];
         const radarCenter = Cesium.Cartographic.fromDegrees(longitude, latitude);
         cartographics.push(radarCenter);
@@ -86,7 +81,7 @@ export class Cesium3DRadarCoverage {
             }
         }
 
-        // Safe terrain sampling with multi-level fallback
+        // Fast, camera-independent terrain sampling
         try {
             await Cesium.sampleTerrain(terrainProvider, 11, cartographics);
         } catch {
@@ -103,45 +98,101 @@ export class Cesium3DRadarCoverage {
         const groundAltitude = cartographics[0].height || 0;
         const radarOriginAlt = groundAltitude + antennaMastHeight;
 
-        // 2. Compute the obstruction distance INDEPENDENTLY for each zone
-        const zoneObstacleDistances: number[][] = zones.map(() => []);
+        // 2. Line of Sight (LOS) and 3D Shadow Line calculation
+        // For each ray, compute the shadow height profile along distance
+        interface AzimuthProfile {
+            // Obstacle distance per zone (where ceiling is hit)
+            zoneEndDists: number[];
+            // Shadow elevation at the end of each zone
+            zoneShadowHeights: number[];
+            // Terrain elevation at the end of each zone
+            zoneTerrainHeights: number[];
+        }
+
+        const profiles: AzimuthProfile[] = [];
 
         for (let a = 0; a < numAzimuths; a++) {
             const rayStartIndex = 1 + a * stepsPerRay;
 
-            for (let zIdx = 0; zIdx < zones.length; zIdx++) {
-                const zone = zones[zIdx];
-                const zoneCeilingAbs = groundAltitude + zone.ceilingHeight;
-                let hitDist: number | null = null;
+            let maxSlope = -Infinity;
+            let greenEndDist = zones[0].maxRange;
+            let yellowEndDist = zones[1].maxRange;
+            let redEndDist = zones[2].maxRange;
 
-                for (let s = 1; s <= stepsPerRay; s++) {
-                    const dist = Math.min(s * stepMeters, zone.maxRange);
-                    const sample = cartographics[rayStartIndex + s - 1];
-                    const terrainHeight = sample?.height ?? 0;
+            let greenHit = false;
+            let yellowHit = false;
+            let redHit = false;
 
-                    // Earth curvature drop
-                    const earthDrop = (dist * dist) / (2 * 6378137);
-                    const zoneLOSHeight = zoneCeilingAbs - earthDrop;
+            const shadowHeightAtDist: number[] = [];
+            const terrainHeightAtDist: number[] = [];
 
-                    // Zone stops ONLY if mountain is taller than its ceiling!
-                    if (terrainHeight >= zoneLOSHeight) {
-                        hitDist = dist;
-                        break;
-                    }
+            for (let s = 1; s <= stepsPerRay; s++) {
+                const dist = Math.min(s * stepMeters, maxOverallRange);
+                const sample = cartographics[rayStartIndex + s - 1];
+                const terrainH = sample?.height ?? groundAltitude;
 
-                    if (dist >= zone.maxRange) break;
+                terrainHeightAtDist.push(terrainH);
+
+                // Earth curvature drop
+                const earthDrop = (dist * dist) / (2 * 6378137);
+
+                // Slope from antenna to this terrain point
+                const slope = (terrainH + earthDrop - radarOriginAlt) / dist;
+                if (slope > maxSlope) {
+                    maxSlope = slope;
                 }
 
-                zoneObstacleDistances[zIdx].push(hitDist !== null ? hitDist : zone.maxRange);
+                // Minimum visible height at this distance (the 3D shadow line)
+                const shadowAlt = radarOriginAlt + dist * maxSlope - earthDrop;
+                shadowHeightAtDist.push(shadowAlt);
+
+                // Check Green Zone (400m ceiling)
+                const greenCeilingAbs = groundAltitude + zones[0].ceilingHeight - earthDrop;
+                if (!greenHit && (terrainH >= greenCeilingAbs || shadowAlt >= greenCeilingAbs)) {
+                    greenEndDist = dist;
+                    greenHit = true;
+                }
+
+                // Check Yellow Zone (900m ceiling)
+                const yellowCeilingAbs = groundAltitude + zones[1].ceilingHeight - earthDrop;
+                if (!yellowHit && (terrainH >= yellowCeilingAbs || shadowAlt >= yellowCeilingAbs)) {
+                    yellowEndDist = dist;
+                    yellowHit = true;
+                }
+
+                // Check Red Zone (1600m ceiling)
+                const redCeilingAbs = groundAltitude + zones[2].ceilingHeight - earthDrop;
+                if (!redHit && (terrainH >= redCeilingAbs || shadowAlt >= redCeilingAbs)) {
+                    redEndDist = dist;
+                    redHit = true;
+                }
             }
+
+            // Get shadow & terrain height at the effective boundary of each zone
+            const getHeightsAtDist = (targetDist: number) => {
+                const idx = Math.min(Math.max(1, Math.round(targetDist / stepMeters)), stepsPerRay) - 1;
+                return {
+                    shadowH: shadowHeightAtDist[idx] ?? groundAltitude,
+                    terrainH: terrainHeightAtDist[idx] ?? groundAltitude
+                };
+            };
+
+            const gH = getHeightsAtDist(greenEndDist);
+            const yH = getHeightsAtDist(yellowEndDist);
+            const rH = getHeightsAtDist(redEndDist);
+
+            profiles.push({
+                zoneEndDists: [greenEndDist, yellowEndDist, redEndDist],
+                zoneShadowHeights: [gH.shadowH, yH.shadowH, rH.shadowH],
+                zoneTerrainHeights: [gH.terrainH, yH.terrainH, rH.terrainH]
+            });
         }
 
         const createdEntities: Cesium.Entity[] = [];
 
-        // 3. Construct 3D Vertical Curtain Walls and 3D Top Caps
+        // 3. Build the 3D Cylinders with FLOATING bottoms
         for (let zIdx = zones.length - 1; zIdx >= 0; zIdx--) {
             const zone = zones[zIdx];
-            const obstacleDists = zoneObstacleDistances[zIdx];
             const ceilingAltitude = groundAltitude + zone.ceilingHeight;
 
             const wallTopCartesians: Cesium.Cartesian3[] = [];
@@ -150,7 +201,11 @@ export class Cesium3DRadarCoverage {
 
             for (let a = 0; a < numAzimuths; a++) {
                 const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
-                const effectiveDist = Math.min(zone.maxRange, obstacleDists[a]);
+                const profile = profiles[a];
+
+                const effectiveDist = profile.zoneEndDists[zIdx];
+                const shadowAlt = profile.zoneShadowHeights[zIdx];
+                const terrainAlt = profile.zoneTerrainHeights[zIdx];
 
                 const { lon, lat } = this.destinationCoordinate(
                     longitude,
@@ -159,27 +214,27 @@ export class Cesium3DRadarCoverage {
                     azimuthRad
                 );
 
-                const stepIndex = Math.min(Math.round(effectiveDist / stepMeters), stepsPerRay);
-                const terrainSample = cartographics[1 + a * stepsPerRay + Math.max(0, stepIndex - 1)];
-                const localTerrainH = terrainSample?.height ?? groundAltitude;
+                // KEY FIX: The bottom of the wall FLOATS at shadowAlt if a mountain blocked the lower rays!
+                // It NEVER drops down to the river bed!
+                const floatingBottom = Math.max(terrainAlt, shadowAlt);
 
-                // BUG FIX: Prevent minimumHeight > height inversion
-                const safeTopHeight = Math.max(ceilingAltitude, localTerrainH + 2);
-                const safeBottomHeight = Math.min(localTerrainH, ceilingAltitude - 2);
+                const safeTopHeight = Math.max(ceilingAltitude, floatingBottom + 5);
+                const safeBottomHeight = Math.min(floatingBottom, safeTopHeight - 2);
 
                 const topPos = Cesium.Cartesian3.fromDegrees(lon, lat, safeTopHeight);
                 wallTopCartesians.push(topPos);
                 wallBottomHeights.push(safeBottomHeight);
 
-                // Cap boundary
                 capCartesians.push(topPos);
             }
 
-            // Close the loop
+            // Close wall loop
             wallTopCartesians.push(wallTopCartesians[0]);
             wallBottomHeights.push(wallBottomHeights[0]);
 
             // A. 3D Vertical Curtain Wall
+            // In open areas: Touches the ground.
+            // Behind mountains: FLOATS high in the sky at the shadow line!
             const wallEntity = viewer.entities.add({
                 name: `${zone.name} 3D Wall`,
                 wall: {
@@ -207,20 +262,17 @@ export class Cesium3DRadarCoverage {
             createdEntities.push(capEntity);
         }
 
-        // 4. Clean 3D Line-of-Sight Rays terminating on the terrain
+        // 4. Draw Line-of-Sight rays from radar to obstacle hits
         const radarAntennaPos = Cesium.Cartesian3.fromDegrees(longitude, latitude, radarOriginAlt);
-        const rayStride = Math.floor(numAzimuths / 18); // 18 rays
+        const rayStride = Math.floor(numAzimuths / 24);
 
         for (let a = 0; a < numAzimuths; a += rayStride) {
             const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
-            const hitDist = zoneObstacleDistances[0][a]; // Innermost zone hit
+            const hitDist = profiles[a].zoneEndDists[0]; // Green hit
             const { lon, lat } = this.destinationCoordinate(longitude, latitude, hitDist, azimuthRad);
+            const hitTerrain = profiles[a].zoneTerrainHeights[0];
 
-            const stepIndex = Math.min(Math.round(hitDist / stepMeters), stepsPerRay);
-            const terrainSample = cartographics[1 + a * stepsPerRay + Math.max(0, stepIndex - 1)];
-            const hitTerrainH = terrainSample?.height ?? groundAltitude;
-
-            const endPos = Cesium.Cartesian3.fromDegrees(lon, lat, hitTerrainH + 5);
+            const endPos = Cesium.Cartesian3.fromDegrees(lon, lat, hitTerrain + 5);
 
             const rayEntity = viewer.entities.add({
                 polyline: {
