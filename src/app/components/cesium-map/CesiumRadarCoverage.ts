@@ -1,148 +1,156 @@
 import * as Cesium from "cesium";
 
-export interface RadarZoneConfig {
+export interface Zone3DConfig {
     name: string;
-    radius: number;        // Max range in meters
-    ceilingHeight: number; // Height of curtain above radar in meters
+    maxRange: number;       // Max radius in meters
+    ceilingHeight: number;  // Height above radar site in meters
     color: Cesium.Color;
-    alpha: number;
+    wallAlpha: number;
+    capAlpha: number;
 }
 
-export interface TerrainRadarOptions {
+export interface Radar3DOptions {
     longitude: number;
     latitude: number;
-    antennaHeight?: number;  // Mast height above ground (e.g. 15m)
-    numAzimuths?: number;    // Number of angles around 360 (e.g. 120 = every 3 degrees)
-    zones?: RadarZoneConfig[];
+    antennaMastHeight?: number; // Antenna elevation above ground (e.g. 25m)
+    numAzimuths?: number;       // Number of angles around 360 (72 = 5-degree steps)
+    zones?: Zone3DConfig[];
 }
 
-export class CesiumTerrainRadarCoverage {
-    public static readonly DEFAULT_ZONES: RadarZoneConfig[] = [
+export class Cesium3DRadarCoverage {
+    /**
+     * 3 Stacked 3D Zones:
+     * - Green: Low altitude (400m ceiling) -> stops at small hills
+     * - Yellow: Medium altitude (900m ceiling) -> passes over small hills, stops at medium peaks
+     * - Red: High altitude (1600m ceiling) -> passes over medium ridges, stops only at massive peaks
+     */
+    public static readonly DEFAULT_3D_ZONES: Zone3DConfig[] = [
         {
-            name: "Close Range / Lethal",
-            radius: 5000,
-            ceilingHeight: 300,
-            color: Cesium.Color.fromCssColorString("#10B981"), // Green
-            alpha: 0.35
+            name: "Low-Altitude Engagement (Green)",
+            maxRange: 5000,
+            ceilingHeight: 400,
+            color: Cesium.Color.fromCssColorString("#10B981"),
+            wallAlpha: 0.35,
+            capAlpha: 0.25
         },
         {
-            name: "Medium Range / Tracking",
-            radius: 12000,
-            ceilingHeight: 600,
-            color: Cesium.Color.fromCssColorString("#F59E0B"), // Amber/Yellow
-            alpha: 0.30
+            name: "Mid-Altitude Tracking (Yellow)",
+            maxRange: 12000,
+            ceilingHeight: 900,
+            color: Cesium.Color.fromCssColorString("#F59E0B"),
+            wallAlpha: 0.30,
+            capAlpha: 0.20
         },
         {
-            name: "Max Range / Early Warning",
-            radius: 20000,
-            ceilingHeight: 1000,
-            color: Cesium.Color.fromCssColorString("#EF4444"), // Red
-            alpha: 0.25
+            name: "High-Altitude Early Warning (Red)",
+            maxRange: 20000,
+            ceilingHeight: 1600,
+            color: Cesium.Color.fromCssColorString("#EF4444"),
+            wallAlpha: 0.25,
+            capAlpha: 0.15
         }
     ];
 
     /**
-     * Calculates terrain-blocked boundaries and creates 3D curtains + top caps
-     * that physically terminate at mountain obstacles.
+     * Builds true 3D volumetric radar cylinders with independent altitude blocking.
      */
-    static buildTerrainAwareRadar(
+    static async create3DRadarZones(
         viewer: Cesium.Viewer,
-        options: TerrainRadarOptions
-    ): Cesium.Entity[] {
+        terrainProvider: Cesium.TerrainProvider,
+        options: Radar3DOptions
+    ): Promise<Cesium.Entity[]> {
         const {
             longitude,
             latitude,
-            antennaHeight = 20,
-            numAzimuths = 120, // 3-degree resolution
-            zones = this.DEFAULT_ZONES
+            antennaMastHeight = 25,
+            numAzimuths = 72,
+            zones = this.DEFAULT_3D_ZONES
         } = options;
 
-        const globe = viewer.scene.globe;
-        const maxOverallRange = Math.max(...zones.map(z => z.radius));
+        const maxOverallRange = Math.max(...zones.map(z => z.maxRange));
+        const stepMeters = 250;
+        const stepsPerRay = Math.ceil(maxOverallRange / stepMeters);
 
-        // 1. Get radar ground elevation from loaded scene terrain
-        const siteCarto = Cesium.Cartographic.fromDegrees(longitude, latitude);
-        const sampledGround = globe.getHeight(siteCarto);
-        const groundAltitude = sampledGround !== undefined && !isNaN(sampledGround) ? sampledGround : 0;
-        const radarAltitude = groundAltitude + antennaHeight;
+        // 1. Gather coordinates to sample at fixed LOD Level 11 (camera-independent)
+        const cartographics: Cesium.Cartographic[] = [];
+        const radarCenter = Cesium.Cartographic.fromDegrees(longitude, latitude);
+        cartographics.push(radarCenter);
 
-        // 2. Compute the terrain obstacle distance for every azimuth angle (0 to 360 deg)
-        const obstacleDistances: number[] = [];
-        const stepSize = 200; // Step size in meters for ray marching
-        const maxSteps = Math.ceil(maxOverallRange / stepSize);
+        for (let a = 0; a < numAzimuths; a++) {
+            const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
 
-        const scratchCarto = new Cesium.Cartographic();
+            for (let s = 1; s <= stepsPerRay; s++) {
+                const dist = Math.min(s * stepMeters, maxOverallRange);
+                const { lon, lat } = this.destinationCoordinate(longitude, latitude, dist, azimuthRad);
+                cartographics.push(Cesium.Cartographic.fromDegrees(lon, lat));
+            }
+        }
 
-        for (let i = 0; i < numAzimuths; i++) {
-            const azimuthDeg = (i / numAzimuths) * 360;
-            const azimuthRad = Cesium.Math.toRadians(azimuthDeg);
-            const sinAz = Math.sin(azimuthRad);
-            const cosAz = Math.cos(azimuthRad);
+        // Safe terrain sampling with multi-level fallback
+        try {
+            await Cesium.sampleTerrain(terrainProvider, 11, cartographics);
+        } catch {
+            try {
+                await Cesium.sampleTerrain(terrainProvider, 9, cartographics);
+            } catch {
+                for (const c of cartographics) {
+                    const h = viewer.scene.globe.getHeight(c);
+                    if (h !== undefined) c.height = h;
+                }
+            }
+        }
 
-            let blockedDist: number | null = null;
-            let prevDist = 0;
+        const groundAltitude = cartographics[0].height || 0;
+        const radarOriginAlt = groundAltitude + antennaMastHeight;
 
-            for (let step = 1; step <= maxSteps; step++) {
-                const dist = Math.min(step * stepSize, maxOverallRange);
+        // 2. Compute the obstruction distance INDEPENDENTLY for each zone
+        const zoneObstacleDistances: number[][] = zones.map(() => []);
 
-                // Precise great-circle destination
-                const { lon: sampleLon, lat: sampleLat } = this.destinationCoordinate(
-                    longitude,
-                    latitude,
-                    dist,
-                    azimuthRad
-                );
+        for (let a = 0; a < numAzimuths; a++) {
+            const rayStartIndex = 1 + a * stepsPerRay;
 
-                scratchCarto.longitude = Cesium.Math.toRadians(sampleLon);
-                scratchCarto.latitude = Cesium.Math.toRadians(sampleLat);
+            for (let zIdx = 0; zIdx < zones.length; zIdx++) {
+                const zone = zones[zIdx];
+                const zoneCeilingAbs = groundAltitude + zone.ceilingHeight;
+                let hitDist: number | null = null;
 
-                const terrainHeight = globe.getHeight(scratchCarto);
+                for (let s = 1; s <= stepsPerRay; s++) {
+                    const dist = Math.min(s * stepMeters, zone.maxRange);
+                    const sample = cartographics[rayStartIndex + s - 1];
+                    const terrainHeight = sample?.height ?? 0;
 
-                if (terrainHeight !== undefined && !isNaN(terrainHeight)) {
-                    // Line-of-sight height accounting for Earth curvature
+                    // Earth curvature drop
                     const earthDrop = (dist * dist) / (2 * 6378137);
-                    const losHeight = radarAltitude - earthDrop;
+                    const zoneLOSHeight = zoneCeilingAbs - earthDrop;
 
-                    // If terrain rises above line-of-sight, mountain blocks the radar!
-                    if (terrainHeight >= losHeight) {
-                        // Binary search to find exact mountain edge
-                        blockedDist = this.binarySearchRefine(
-                            globe,
-                            longitude,
-                            latitude,
-                            radarAltitude,
-                            azimuthRad,
-                            prevDist,
-                            dist,
-                            5
-                        );
+                    // Zone stops ONLY if mountain is taller than its ceiling!
+                    if (terrainHeight >= zoneLOSHeight) {
+                        hitDist = dist;
                         break;
                     }
+
+                    if (dist >= zone.maxRange) break;
                 }
 
-                prevDist = dist;
-                if (dist >= maxOverallRange) break;
+                zoneObstacleDistances[zIdx].push(hitDist !== null ? hitDist : zone.maxRange);
             }
-
-            obstacleDistances.push(blockedDist !== null ? blockedDist : maxOverallRange);
         }
 
         const createdEntities: Cesium.Entity[] = [];
 
-        // 3. Generate terrain-clipped 3D Wall Curtains and Polygons for each zone
-        // Sort largest radius first
-        const sortedZones = [...zones].sort((a, b) => b.radius - a.radius);
+        // 3. Construct 3D Vertical Curtain Walls and 3D Top Caps
+        for (let zIdx = zones.length - 1; zIdx >= 0; zIdx--) {
+            const zone = zones[zIdx];
+            const obstacleDists = zoneObstacleDistances[zIdx];
+            const ceilingAltitude = groundAltitude + zone.ceilingHeight;
 
-        for (const zone of sortedZones) {
-            const topPositions: Cesium.Cartesian3[] = [];
-            const bottomHeights: number[] = [];
-            const polygonHierarchyPositions: Cesium.Cartesian3[] = [];
+            const wallTopCartesians: Cesium.Cartesian3[] = [];
+            const wallBottomHeights: number[] = [];
+            const capCartesians: Cesium.Cartesian3[] = [];
 
-            for (let i = 0; i < numAzimuths; i++) {
-                const azimuthRad = Cesium.Math.toRadians((i / numAzimuths) * 360);
-
-                // CLAMP: The radius CANNOT exceed the mountain distance!
-                const effectiveDist = Math.min(zone.radius, obstacleDistances[i]);
+            for (let a = 0; a < numAzimuths; a++) {
+                const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
+                const effectiveDist = Math.min(zone.maxRange, obstacleDists[a]);
 
                 const { lon, lat } = this.destinationCoordinate(
                     longitude,
@@ -151,34 +159,33 @@ export class CesiumTerrainRadarCoverage {
                     azimuthRad
                 );
 
-                scratchCarto.longitude = Cesium.Math.toRadians(lon);
-                scratchCarto.latitude = Cesium.Math.toRadians(lat);
-                const terrainH = globe.getHeight(scratchCarto) || groundAltitude;
+                const stepIndex = Math.min(Math.round(effectiveDist / stepMeters), stepsPerRay);
+                const terrainSample = cartographics[1 + a * stepsPerRay + Math.max(0, stepIndex - 1)];
+                const localTerrainH = terrainSample?.height ?? groundAltitude;
 
-                // Wall top height = ground elevation at radar + zone ceiling height
-                const wallTopHeight = groundAltitude + zone.ceilingHeight;
+                // BUG FIX: Prevent minimumHeight > height inversion
+                const safeTopHeight = Math.max(ceilingAltitude, localTerrainH + 2);
+                const safeBottomHeight = Math.min(localTerrainH, ceilingAltitude - 2);
 
-                const topCartesian = Cesium.Cartesian3.fromDegrees(lon, lat, wallTopHeight);
-                topPositions.push(topCartesian);
-                bottomHeights.push(terrainH);
+                const topPos = Cesium.Cartesian3.fromDegrees(lon, lat, safeTopHeight);
+                wallTopCartesians.push(topPos);
+                wallBottomHeights.push(safeBottomHeight);
 
-                // Polygon cap position
-                polygonHierarchyPositions.push(
-                    Cesium.Cartesian3.fromDegrees(lon, lat, wallTopHeight)
-                );
+                // Cap boundary
+                capCartesians.push(topPos);
             }
 
             // Close the loop
-            topPositions.push(topPositions[0]);
-            bottomHeights.push(bottomHeights[0]);
+            wallTopCartesians.push(wallTopCartesians[0]);
+            wallBottomHeights.push(wallBottomHeights[0]);
 
-            // A. Vertical 3D Curtain Wall that hugs the terrain and stops at mountain faces
+            // A. 3D Vertical Curtain Wall
             const wallEntity = viewer.entities.add({
-                name: `${zone.name} Wall`,
+                name: `${zone.name} 3D Wall`,
                 wall: {
-                    positions: topPositions,
-                    minimumHeights: bottomHeights,
-                    material: zone.color.withAlpha(zone.alpha),
+                    positions: wallTopCartesians,
+                    minimumHeights: wallBottomHeights,
+                    material: zone.color.withAlpha(zone.wallAlpha),
                     outline: true,
                     outlineColor: zone.color.withAlpha(0.9),
                     outlineWidth: 2
@@ -186,55 +193,41 @@ export class CesiumTerrainRadarCoverage {
             });
             createdEntities.push(wallEntity);
 
-            // B. Top Cap of the Cylinder
-            const topCapEntity = viewer.entities.add({
+            // B. 3D Flat Top Ceiling Cap
+            const capEntity = viewer.entities.add({
                 name: `${zone.name} Top Cap`,
                 polygon: {
-                    hierarchy: new Cesium.PolygonHierarchy(polygonHierarchyPositions),
-                    height: groundAltitude + zone.ceilingHeight,
-                    material: zone.color.withAlpha(zone.alpha * 0.75),
-                    outline: false
+                    hierarchy: new Cesium.PolygonHierarchy(capCartesians),
+                    height: ceilingAltitude,
+                    material: zone.color.withAlpha(zone.capAlpha),
+                    outline: true,
+                    outlineColor: zone.color.withAlpha(0.85)
                 }
             });
-            createdEntities.push(topCapEntity);
+            createdEntities.push(capEntity);
         }
 
-        // 4. Draw Radial Sweep Lines that terminate right on the mountain face
-        const radarOriginCartesian = Cesium.Cartesian3.fromDegrees(longitude, latitude, radarAltitude);
+        // 4. Clean 3D Line-of-Sight Rays terminating on the terrain
+        const radarAntennaPos = Cesium.Cartesian3.fromDegrees(longitude, latitude, radarOriginAlt);
+        const rayStride = Math.floor(numAzimuths / 18); // 18 rays
 
-        // Draw sample rays every 10 degrees for visual confirmation
-        const rayStride = Math.floor(numAzimuths / 36);
-        for (let i = 0; i < numAzimuths; i += rayStride) {
-            const azimuthRad = Cesium.Math.toRadians((i / numAzimuths) * 360);
-            const effectiveDist = obstacleDistances[i];
-            const isBlocked = effectiveDist < maxOverallRange;
+        for (let a = 0; a < numAzimuths; a += rayStride) {
+            const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
+            const hitDist = zoneObstacleDistances[0][a]; // Innermost zone hit
+            const { lon, lat } = this.destinationCoordinate(longitude, latitude, hitDist, azimuthRad);
 
-            const { lon, lat } = this.destinationCoordinate(
-                longitude,
-                latitude,
-                effectiveDist,
-                azimuthRad
-            );
+            const stepIndex = Math.min(Math.round(hitDist / stepMeters), stepsPerRay);
+            const terrainSample = cartographics[1 + a * stepsPerRay + Math.max(0, stepIndex - 1)];
+            const hitTerrainH = terrainSample?.height ?? groundAltitude;
 
-            scratchCarto.longitude = Cesium.Math.toRadians(lon);
-            scratchCarto.latitude = Cesium.Math.toRadians(lat);
-            const hitGround = globe.getHeight(scratchCarto) || groundAltitude;
-
-            const endCartesian = Cesium.Cartesian3.fromDegrees(
-                lon,
-                lat,
-                isBlocked ? hitGround + 5 : radarAltitude
-            );
+            const endPos = Cesium.Cartesian3.fromDegrees(lon, lat, hitTerrainH + 5);
 
             const rayEntity = viewer.entities.add({
                 polyline: {
-                    positions: [radarOriginCartesian, endCartesian],
-                    width: isBlocked ? 2 : 1,
+                    positions: [radarAntennaPos, endPos],
+                    width: 1.5,
                     arcType: Cesium.ArcType.NONE,
-                    material: isBlocked
-    ? Cesium.Color.fromCssColorString("#22D3EE").withAlpha(0.95)
-    : Cesium.Color.fromCssColorString("#60A5FA").withAlpha(0.35),
-                    clampToGround: false
+                    material: Cesium.Color.fromCssColorString("#00E5FF").withAlpha(0.65)
                 }
             });
             createdEntities.push(rayEntity);
@@ -243,16 +236,13 @@ export class CesiumTerrainRadarCoverage {
         return createdEntities;
     }
 
-    /**
-     * Great-Circle destination coordinate given origin, distance, and azimuth.
-     */
     private static destinationCoordinate(
         lonDeg: number,
         latDeg: number,
         distMeters: number,
         bearingRad: number
     ): { lon: number; lat: number } {
-        const R = 6378137.0; // Earth radius (m)
+        const R = 6378137.0;
         const dByR = distMeters / R;
         const lat1 = Cesium.Math.toRadians(latDeg);
         const lon1 = Cesium.Math.toRadians(lonDeg);
@@ -271,42 +261,5 @@ export class CesiumTerrainRadarCoverage {
             lon: Cesium.Math.toDegrees(lon2),
             lat: Cesium.Math.toDegrees(lat2)
         };
-    }
-
-    /**
-     * Binary search refinement to pinpoint the exact mountain collision point.
-     */
-    private static binarySearchRefine(
-        globe: Cesium.Globe,
-        originLon: number,
-        originLat: number,
-        radarAlt: number,
-        azimuthRad: number,
-        lowDist: number,
-        highDist: number,
-        iterations: number
-    ): number {
-        let low = lowDist;
-        let high = highDist;
-        const scratch = new Cesium.Cartographic();
-
-        for (let it = 0; it < iterations; it++) {
-            const mid = (low + high) * 0.5;
-            const { lon, lat } = this.destinationCoordinate(originLon, originLat, mid, azimuthRad);
-
-            scratch.longitude = Cesium.Math.toRadians(lon);
-            scratch.latitude = Cesium.Math.toRadians(lat);
-
-            const hTerrain = globe.getHeight(scratch);
-            const hLOS = radarAlt - (mid * mid) / (2 * 6378137);
-
-            if (hTerrain !== undefined && !isNaN(hTerrain) && hTerrain >= hLOS) {
-                high = mid; // Blocked earlier
-            } else {
-                low = mid;  // Clear at this distance
-            }
-        }
-
-        return high;
     }
 }

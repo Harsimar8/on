@@ -5,9 +5,10 @@ import { EditorState } from "../../core/state/EditorState";
 import { TeamFilterService } from "../../core/services/TeamFilterService";
 import { Team } from "../../core/types/Team";
 import { TeamFilter } from "../../core/models/TeamFilter";
-import { CesiumTerrainRadarCoverage } from "./CesiumRadarCoverage";
+import { Cesium3DRadarCoverage } from "./CesiumRadarCoverage";
 
 export class CesiumEntityRenderer {
+    // Stores 3D radar entities by entity.id so they can be cleaned up cleanly
     private readonly radarEntities = new Map<string, Cesium.Entity[]>();
 
     constructor(
@@ -20,9 +21,18 @@ export class CesiumEntityRenderer {
     render(entities: Entity[]): void {
         const filter = this.teamFilterService.cesiumFilter();
 
+        // 1. Remove all billboards and standard entities
         this.viewer.entities.removeAll();
+
+        // 2. Clean up previously created 3D radar cylinders
+        for (const [_, entityList] of this.radarEntities) {
+            for (const ent of entityList) {
+                this.viewer.entities.remove(ent);
+            }
+        }
         this.radarEntities.clear();
 
+        // 3. Re-draw visible entities
         for (const entity of entities) {
             if (
                 (filter === TeamFilter.Blue && entity.team !== Team.Blue) ||
@@ -32,30 +42,38 @@ export class CesiumEntityRenderer {
             }
 
             this.drawRadar(entity);
-           
+            this.drawTeamDot(entity);
 
             if (entity.definition.entityType === "RadarSite") {
-                this.drawTerrainAwareRadar(entity);
+                this.drawTerrainRadarCone(entity);
             }
         }
 
         this.viewer.scene.requestRender();
     }
 
-    private drawTerrainAwareRadar(entity: Entity): void {
-        // Build the 3-tier terrain-blocked radar curtains
-        const radarEntities = CesiumTerrainRadarCoverage.buildTerrainAwareRadar(
-            this.viewer,
-            {
-                longitude: entity.position.longitude,
-                latitude: entity.position.latitude,
-                antennaHeight: 25, // 25 meters mast height
-                numAzimuths: 120,  // 120 directions (every 3 degrees)
-                zones: CesiumTerrainRadarCoverage.DEFAULT_ZONES
-            }
-        );
+    private async drawTerrainRadarCone(entity: Entity): Promise<void> {
+        try {
+            const radar3DEntities = await Cesium3DRadarCoverage.create3DRadarZones(
+                this.viewer,
+                this.terrainProvider,
+                {
+                    longitude: entity.position.longitude,
+                    latitude: entity.position.latitude,
+                    antennaMastHeight: 25,
+                    numAzimuths: 72,
+                    zones: Cesium3DRadarCoverage.DEFAULT_3D_ZONES
+                }
+            );
 
-        this.radarEntities.set(entity.id, radarEntities);
+            // Store cleanly in the map
+            this.radarEntities.set(entity.id, radar3DEntities);
+
+            // Request render so Cesium updates the viewport immediately
+            this.viewer.scene.requestRender();
+        } catch (err) {
+            console.error("Failed to render 3D radar coverage:", err);
+        }
     }
 
     private drawRadar(entity: Entity): void {
