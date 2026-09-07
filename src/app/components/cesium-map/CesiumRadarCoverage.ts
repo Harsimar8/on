@@ -20,15 +20,15 @@ export interface Radar3DOptions {
 export class Cesium3DRadarCoverage {
     public static readonly DEFAULT_3D_ZONES: Zone3DConfig[] = [
         {
-            name: "Low-Altitude (Green)",
+            name: "Low-Altitude (Plum)",
             maxRange: 5000,
             ceilingHeight: 400, // 400m ceiling
-            color: Cesium.Color.fromCssColorString("#10B981"),
+            color: Cesium.Color.fromCssColorString("#7E22CE"),
             wallAlpha: 0.35,
             capAlpha: 0.25
         },
         {
-            name: "Mid-Altitude (Yellow)",
+            name: "Mid-Altitude (Amber)",
             maxRange: 16000, // widened from 12000 per request
             ceilingHeight: 900, // 900m ceiling
             color: Cesium.Color.fromCssColorString("#F59E0B"),
@@ -36,10 +36,10 @@ export class Cesium3DRadarCoverage {
             capAlpha: 0.20
         },
         {
-            name: "High-Altitude (Red/Pink)",
+            name: "High-Altitude (Cobalt)",
             maxRange: 20000,
             ceilingHeight: 1600, // 1600m ceiling
-            color: Cesium.Color.fromCssColorString("#EF4444"),
+            color: Cesium.Color.fromCssColorString("#0369A1"),
             wallAlpha: 0.25,
             capAlpha: 0.15
         }
