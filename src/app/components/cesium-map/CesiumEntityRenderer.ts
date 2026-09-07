@@ -61,7 +61,7 @@ export class CesiumEntityRenderer {
                     longitude: entity.position.longitude,
                     latitude: entity.position.latitude,
                     antennaMastHeight: 25,
-                    numAzimuths: 72,
+                    numAzimuths: 144,
                     zones: Cesium3DRadarCoverage.DEFAULT_3D_ZONES
                 }
             );
@@ -76,51 +76,74 @@ export class CesiumEntityRenderer {
         }
     }
 
+    
     private drawRadar(entity: Entity): void {
-        const selected = this.editorState.selectedEntity()?.id === entity.id;
+    const selected =
+        this.editorState.selectedEntity()?.id === entity.id;
 
-        const carto = Cesium.Cartographic.fromDegrees(entity.position.longitude, entity.position.latitude);
-        const terrainH = this.viewer.scene.globe.getHeight(carto) || entity.position.altitude || 0;
+    this.viewer.entities.add({
+        id: entity.id,
 
-        this.viewer.entities.add({
-            id: entity.id,
-            position: Cesium.Cartesian3.fromDegrees(
-                entity.position.longitude,
-                entity.position.latitude,
-                terrainH + 15
+        position: Cesium.Cartesian3.fromDegrees(
+            entity.position.longitude,
+            entity.position.latitude,
+            entity.position.altitude
+        ),
+
+        billboard: {
+            image: EntityIconFactory.get(
+                entity.definition.entityType
             ),
-            billboard: {
-                image: EntityIconFactory.get(entity.definition.entityType),
-                width: selected ? 36 : 32,
-                height: selected ? 36 : 32,
-                scale: selected ? 1.08 : 1.0,
-                color: selected ? Cesium.Color.fromCssColorString("#FFF8DC") : Cesium.Color.WHITE,
-                disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM
-            }
-        });
-    }
 
-    private drawTeamDot(entity: Entity): void {
-        const carto = Cesium.Cartographic.fromDegrees(entity.position.longitude, entity.position.latitude);
-        const terrainH = this.viewer.scene.globe.getHeight(carto) || entity.position.altitude || 0;
+            width: selected ? 36 : 32,
+            height: selected ? 36 : 32,
 
-        this.viewer.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(
-                entity.position.longitude,
-                entity.position.latitude,
-                terrainH + 15
-            ),
-            billboard: {
-                image: entity.team === "Blue" ? "assets/blue.png" : "assets/red.png",
-                color: entity.team === "Blue" ? Cesium.Color.fromCssColorString("#3B82F6") : Cesium.Color.WHITE,
-                width: 16,
-                height: 16,
-                verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-                pixelOffset: new Cesium.Cartesian2(-27, 14),
-                disableDepthTestDistance: Number.POSITIVE_INFINITY
-            }
-        });
-    }
+            scale: selected ? 1.08 : 1.0,
+
+            color: selected
+                ? Cesium.Color.fromCssColorString("#FFF8DC")
+                : Cesium.Color.WHITE,
+
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER
+        }
+    });
+}
+
+    
+      private drawTeamDot(entity: Entity): void {
+    this.viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(
+            entity.position.longitude,
+            entity.position.latitude,
+            entity.position.altitude
+        ),
+
+        billboard: {
+            image:
+                entity.team === "Blue"
+                    ? "assets/blue.png"
+                    : "assets/red.png",
+
+            color:
+                entity.team === "Blue"
+                    ? Cesium.Color.fromCssColorString("#3B82F6")
+                    : Cesium.Color.WHITE,
+
+            width: 16,
+            height: 16,
+
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+
+            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+
+            disableDepthTestDistance: Number.POSITIVE_INFINITY
+        }
+    });
+}
 }

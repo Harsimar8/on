@@ -29,7 +29,7 @@ export class Cesium3DRadarCoverage {
         },
         {
             name: "Mid-Altitude (Yellow)",
-            maxRange: 12000,
+            maxRange: 16000, // widened from 12000 per request
             ceilingHeight: 900, // 900m ceiling
             color: Cesium.Color.fromCssColorString("#F59E0B"),
             wallAlpha: 0.30,
@@ -45,6 +45,12 @@ export class Cesium3DRadarCoverage {
         }
     ];
 
+    // Maximum allowed line-of-sight obstruction angle (radians).
+    // tan(60 deg) ~= 1.73. Without this cap, one nearby ridge can force
+    // the "shadow floor" to climb without bound at long range, which was
+    // pushing wall tops above the ceiling and causing spikes on the horizon.
+    private static readonly MAX_SLOPE = 1.73;
+
     /**
      * Builds true 3D volumetric radar cylinders with realistic 3D radar shadow.
      * Behind a mountain, the cylinder bottom FLOATS in the air and never touches the valley bed!
@@ -58,7 +64,7 @@ export class Cesium3DRadarCoverage {
             longitude,
             latitude,
             antennaMastHeight = 25,
-            numAzimuths = 72,
+            numAzimuths = 144, // finer resolution -> smoother, less blocky circle
             zones = this.DEFAULT_3D_ZONES
         } = options;
 
@@ -111,8 +117,33 @@ export class Cesium3DRadarCoverage {
 
         const profiles: AzimuthProfile[] = [];
 
+        // Moving-average window (in samples) used to smooth raw terrain
+        // heights before they feed the slope/shadow calculation. Real DEM
+        // data has small noise/bumps of a few meters between sample points;
+        // without smoothing, a single noisy sample can permanently distort
+        // the "shadow line" for the rest of that ray (since maxSlope only
+        // ever increases), producing sharp fake notches even on flat ground.
+        const SMOOTH_WINDOW = 3;
+
         for (let a = 0; a < numAzimuths; a++) {
             const rayStartIndex = 1 + a * stepsPerRay;
+
+            // Raw terrain heights for this ray, pulled once up front so we
+            // can smooth them before the slope/shadow pass below.
+            const rawTerrainForRay: number[] = [];
+            for (let s = 1; s <= stepsPerRay; s++) {
+                const sample = cartographics[rayStartIndex + s - 1];
+                rawTerrainForRay.push(sample?.height ?? groundAltitude);
+            }
+
+            // Simple centered moving average to suppress single-sample noise.
+            const smoothedTerrainForRay: number[] = rawTerrainForRay.map((_, i) => {
+                const lo = Math.max(0, i - Math.floor(SMOOTH_WINDOW / 2));
+                const hi = Math.min(rawTerrainForRay.length - 1, i + Math.floor(SMOOTH_WINDOW / 2));
+                let sum = 0;
+                for (let k = lo; k <= hi; k++) sum += rawTerrainForRay[k];
+                return sum / (hi - lo + 1);
+            });
 
             let maxSlope = -Infinity;
             let greenEndDist = zones[0].maxRange;
@@ -128,8 +159,10 @@ export class Cesium3DRadarCoverage {
 
             for (let s = 1; s <= stepsPerRay; s++) {
                 const dist = Math.min(s * stepMeters, maxOverallRange);
-                const sample = cartographics[rayStartIndex + s - 1];
-                const terrainH = sample?.height ?? groundAltitude;
+                // Use the smoothed height for slope/shadow math (reduces
+                // false positives), but keep the raw height available too
+                // since the actual wall geometry should still hug real terrain.
+                const terrainH = smoothedTerrainForRay[s - 1];
 
                 terrainHeightAtDist.push(terrainH);
 
@@ -140,6 +173,12 @@ export class Cesium3DRadarCoverage {
                 const slope = (terrainH + earthDrop - radarOriginAlt) / dist;
                 if (slope > maxSlope) {
                     maxSlope = slope;
+                }
+
+                // FIX: cap the running max slope so distant shadow heights
+                // can't run away to infinity from one nearby steep ridge.
+                if (maxSlope > this.MAX_SLOPE) {
+                    maxSlope = this.MAX_SLOPE;
                 }
 
                 // Minimum visible height at this distance (the 3D shadow line)
@@ -167,6 +206,17 @@ export class Cesium3DRadarCoverage {
                     redHit = true;
                 }
             }
+
+            // FIX: a zone's boundary must never extend past its own configured
+            // maxRange, no matter what the terrain does farther out. Previously
+            // the hit-scan ran all the way to maxOverallRange (e.g. 20000m) for
+            // EVERY zone's check, so on gently-rising "flat looking" ground the
+            // green zone's 400m ceiling might not be crossed until 12000m+ out,
+            // stretching a green tongue far past its own ring and straight
+            // through mountains in between (and across yellow's boundary).
+            greenEndDist = Math.min(greenEndDist, zones[0].maxRange);
+            yellowEndDist = Math.min(yellowEndDist, zones[1].maxRange);
+            redEndDist = Math.min(redEndDist, zones[2].maxRange);
 
             // Get shadow & terrain height at the effective boundary of each zone
             const getHeightsAtDist = (targetDist: number) => {
@@ -214,11 +264,15 @@ export class Cesium3DRadarCoverage {
                     azimuthRad
                 );
 
-                // KEY FIX: The bottom of the wall FLOATS at shadowAlt if a mountain blocked the lower rays!
-                // It NEVER drops down to the river bed!
+                // The bottom of the wall FLOATS at shadowAlt if a mountain blocked the lower rays.
+                // It never drops down below the actual terrain either.
                 const floatingBottom = Math.max(terrainAlt, shadowAlt);
 
-                const safeTopHeight = Math.max(ceilingAltitude, floatingBottom + 5);
+                // FIX: the wall top must ALWAYS sit exactly at the ceiling —
+                // never let floatingBottom push it higher. Previously this was
+                // Math.max(ceilingAltitude, floatingBottom + 5), which let the
+                // top shoot above the ceiling and produced spikes above ridgelines.
+                const safeTopHeight = ceilingAltitude;
                 const safeBottomHeight = Math.min(floatingBottom, safeTopHeight - 2);
 
                 const topPos = Cesium.Cartesian3.fromDegrees(lon, lat, safeTopHeight);
@@ -234,7 +288,8 @@ export class Cesium3DRadarCoverage {
 
             // A. 3D Vertical Curtain Wall
             // In open areas: Touches the ground.
-            // Behind mountains: FLOATS high in the sky at the shadow line!
+            // Behind mountains: FLOATS high in the sky at the shadow line,
+            // but its top is always flush with the flat ceiling cap.
             const wallEntity = viewer.entities.add({
                 name: `${zone.name} 3D Wall`,
                 wall: {
@@ -260,29 +315,6 @@ export class Cesium3DRadarCoverage {
                 }
             });
             createdEntities.push(capEntity);
-        }
-
-        // 4. Draw Line-of-Sight rays from radar to obstacle hits
-        const radarAntennaPos = Cesium.Cartesian3.fromDegrees(longitude, latitude, radarOriginAlt);
-        const rayStride = Math.floor(numAzimuths / 24);
-
-        for (let a = 0; a < numAzimuths; a += rayStride) {
-            const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
-            const hitDist = profiles[a].zoneEndDists[0]; // Green hit
-            const { lon, lat } = this.destinationCoordinate(longitude, latitude, hitDist, azimuthRad);
-            const hitTerrain = profiles[a].zoneTerrainHeights[0];
-
-            const endPos = Cesium.Cartesian3.fromDegrees(lon, lat, hitTerrain + 5);
-
-            const rayEntity = viewer.entities.add({
-                polyline: {
-                    positions: [radarAntennaPos, endPos],
-                    width: 1.5,
-                    arcType: Cesium.ArcType.NONE,
-                    material: Cesium.Color.fromCssColorString("#00E5FF").withAlpha(0.65)
-                }
-            });
-            createdEntities.push(rayEntity);
         }
 
         return createdEntities;

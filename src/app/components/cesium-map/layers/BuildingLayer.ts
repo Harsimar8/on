@@ -11,21 +11,21 @@ export class BuildingLayer {
 
     await viewer.zoomTo(tileset);
 
-    viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(
-        78.07038676,
-        30.29320338,
-        1200
-      ),
-      orientation: {
-        heading: 0,
-        pitch: Cesium.Math.toRadians(-45),
-        roll: 0
-      }
-    });
+    // ONLY move camera to tower/tank location
+   viewer.camera.setView({
+  destination: Cesium.Cartesian3.fromDegrees(
+    78.06979012539479,
+    30.296704600692998,
+    300
+  ),
+  orientation: {
+    heading: 0,
+    pitch: Cesium.Math.toRadians(-45),
+    roll: 0
+  }
+});
 
     console.log("Tileset loaded");
     console.log("Bounding radius:", tileset.boundingSphere.radius);
   }
 }
-
