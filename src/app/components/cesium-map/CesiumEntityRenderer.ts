@@ -62,6 +62,9 @@ export class CesiumEntityRenderer {
                     latitude: entity.position.latitude,
                     antennaMastHeight: 25,
                     numAzimuths: 144,
+                    showDebugRays: true,
+                    
+                    
                     zones: Cesium3DRadarCoverage.DEFAULT_3D_ZONES
                 }
             );

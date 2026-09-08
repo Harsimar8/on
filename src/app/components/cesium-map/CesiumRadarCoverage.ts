@@ -348,6 +348,7 @@
 //     }
 // }
 
+
 import * as Cesium from "cesium";
 
 export interface Zone3DConfig {
@@ -371,6 +372,20 @@ export interface Radar3DOptions {
                                  // Extra rays get inserted automatically
                                  // wherever neighbors disagree sharply.
     zones?: Zone3DConfig[];
+
+    // --- DEBUG VISUALIZATION ---
+    // Draws every individual ray as a thin line from the radar out to
+    // wherever it actually stopped (either the blocking mountain, or the
+    // zone's full range). Turn this on to visually verify that rays are
+    // stopping at the correct distance/mountain, and to see exactly where
+    // the adaptive refinement inserted extra rays. Plain lines + dots only,
+    // no text/labels.
+    showDebugRays?: boolean;
+
+    // Color of the RAY LINE itself (from radar to its endpoint). Off-white
+    // by default so it reads clearly against both green terrain and the
+    // colored coverage zones.
+    debugRayLineColor?: Cesium.Color;
 }
 
 export class Cesium3DRadarCoverage {
@@ -407,31 +422,10 @@ export class Cesium3DRadarCoverage {
 
     // --- Adaptive refinement settings ---
 
-    // If two neighboring rays' "how far did it get" distances differ by more
-    // than this, we suspect a mountain edge/gap sits between them that
-    // neither ray directly sampled, and we insert a ray exactly in between
-    // to check. Lowered from 800 -> 250: check much more aggressively.
     private static readonly JUMP_DISTANCE_THRESHOLD_M = 250;
-
-    // NEW: even when two neighbors reach the SAME distance (e.g. both hit
-    // full range, or both get blocked at a similar distance), their actual
-    // ground/mountain HEIGHT at that point can still differ a lot (one on a
-    // ridge crest, one in a valley) without ever tripping the distance
-    // check above. This catches that case.
     private static readonly JUMP_HEIGHT_THRESHOLD_M = 120;
-
-    // Stop subdividing a gap once the two rays are closer together than this
-    // angle (~0.02 degrees) - prevents infinite bisection on a genuinely
-    // vertical cliff edge.
     private static readonly MIN_ANGULAR_GAP_RAD = Cesium.Math.toRadians(0.02);
-
-    // How many rounds of "insert a ray in the middle of every big gap" to
-    // run. Each round can double the ray count in the affected areas.
     private static readonly MAX_REFINE_ROUNDS = 9;
-
-    // Hard safety cap on total rays, so pathological terrain (e.g. cliffs
-    // everywhere) can't blow up ray count / performance. Raised since
-    // refinement is now much more aggressive.
     private static readonly MAX_TOTAL_RAYS = 6000;
 
     private static readonly stepMeters = 10;
@@ -446,6 +440,9 @@ export class Cesium3DRadarCoverage {
      * the disagreement shrinks or a safety limit is hit. The final wall/cap
      * are built from this adaptively-spaced ray set, so edges hug mountain
      * shoulders instead of jumping straight across unsampled gaps.
+     *
+     * Set `showDebugRays: true` to draw every individual ray as a line so
+     * you can visually confirm each one is stopping at the right place.
      */
     static async create3DRadarZones(
         viewer: Cesium.Viewer,
@@ -457,7 +454,9 @@ export class Cesium3DRadarCoverage {
             latitude,
             antennaMastHeight = 0,
             numAzimuths = 144,
-            zones = this.DEFAULT_3D_ZONES
+            zones = this.DEFAULT_3D_ZONES,
+            showDebugRays = false,
+            debugRayLineColor = Cesium.Color.fromCssColorString("#F5F1E8")
         } = options;
 
         const maxOverallRange = Math.max(...zones.map(z => z.maxRange));
@@ -479,7 +478,7 @@ export class Cesium3DRadarCoverage {
             azimuthRad: number;
             blockDist: number | null;
             blockHeight: number | null;
-            terrainForRay: number[]; // raw terrain height per 250m step, up to maxOverallRange
+            terrainForRay: number[]; // raw terrain height per step, up to maxOverallRange
         }
 
         // Samples a BATCH of rays (given their azimuths) in one terrain call,
@@ -555,14 +554,8 @@ export class Cesium3DRadarCoverage {
             return entries;
         };
 
-        // "Effective distance" used purely to detect big jumps between
-        // neighbors: a clear ray (null) is treated as reaching maxOverallRange.
         const effDist = (r: RayEntry) => r.blockDist ?? maxOverallRange;
 
-        // "Representative height" for a ray - the height of whatever it
-        // actually ended on (the blocking mountain, or the terrain at full
-        // range). Used to catch cases where two neighbors reach a similar
-        // DISTANCE but land on very different HEIGHTS (ridge vs valley).
         const repHeight = (r: RayEntry): number => {
             if (r.blockDist !== null && r.blockHeight !== null) return r.blockHeight;
             const idx = Math.min(Math.max(1, Math.round(maxOverallRange / this.stepMeters)), stepsPerRay) - 1;
@@ -574,9 +567,7 @@ export class Cesium3DRadarCoverage {
         let rays: RayEntry[] = await computeRayEntries(baseAzimuths);
         rays.sort((a, b) => a.azimuthRad - b.azimuthRad);
 
-        // 2. Adaptive refinement rounds: find big neighbor-to-neighbor jumps
-        // (checking the circular wrap-around pair too), insert a midpoint
-        // ray for each, batch-sample them all at once, splice them in.
+        // 2. Adaptive refinement rounds.
         for (let round = 0; round < this.MAX_REFINE_ROUNDS; round++) {
             if (rays.length >= this.MAX_TOTAL_RAYS) break;
 
@@ -618,7 +609,6 @@ export class Cesium3DRadarCoverage {
             }
         }
 
-        // 3. Build each zone from the final adaptive ray set.
         const createdEntities: Cesium.Entity[] = [];
 
         const getRawTerrainAtDist = (r: RayEntry, targetDist: number): number => {
@@ -626,6 +616,45 @@ export class Cesium3DRadarCoverage {
             return r.terrainForRay[idx] ?? groundAltitude;
         };
 
+        // 3. DEBUG RAYS - draw every ray from the radar out to wherever it
+        // actually stopped, so you can see with your own eyes which
+        // direction reached full range vs which got cut short by terrain.
+        if (showDebugRays) {
+            const radarTop = Cesium.Cartesian3.fromDegrees(longitude, latitude, radarOriginAlt);
+
+            for (const ray of rays) {
+                const isBlocked = ray.blockDist !== null;
+                const endDist = ray.blockDist ?? maxOverallRange;
+                const endHeight = isBlocked
+                    ? (ray.blockHeight as number)
+                    : getRawTerrainAtDist(ray, maxOverallRange);
+
+                const { lon, lat } = this.destinationCoordinate(longitude, latitude, endDist, ray.azimuthRad);
+                // Lift the visible marker slightly above the ground so it
+                // doesn't get hidden by the terrain depth test.
+                const endPos = Cesium.Cartesian3.fromDegrees(lon, lat, endHeight + 15);
+
+                const lineEntity = viewer.entities.add({
+                    polyline: {
+                        positions: [radarTop, endPos],
+                        width: 3,
+                        material: debugRayLineColor,
+                        clampToGround: false,
+                        // PolylineGraphics has no disableDepthTestDistance
+                        // property (that only exists on Point/Billboard/
+                        // Label). depthFailMaterial is the polyline
+                        // equivalent: it's what gets drawn for the part of
+                        // the line that's behind terrain, so the ray stays
+                        // visible end-to-end instead of disappearing behind
+                        // hills.
+                        depthFailMaterial: debugRayLineColor
+                    }
+                });
+                createdEntities.push(lineEntity);
+            }
+        }
+
+        // 4. Build each zone from the final adaptive ray set.
         for (let zIdx = zones.length - 1; zIdx >= 0; zIdx--) {
             const zone = zones[zIdx];
 
@@ -658,7 +687,6 @@ export class Cesium3DRadarCoverage {
             wallBottomHeights.push(wallBottomHeights[0]);
 
             const wallEntity = viewer.entities.add({
-                name: `${zone.name} 3D Wall`,
                 wall: {
                     positions: wallTop,
                     minimumHeights: wallBottomHeights,
@@ -671,7 +699,6 @@ export class Cesium3DRadarCoverage {
             createdEntities.push(wallEntity);
 
             const capEntity = viewer.entities.add({
-                name: `${zone.name} Top Cap`,
                 polygon: {
                     hierarchy: new Cesium.PolygonHierarchy(capPositions),
                     perPositionHeight: true,
