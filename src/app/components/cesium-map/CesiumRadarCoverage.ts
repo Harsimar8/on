@@ -348,7 +348,6 @@
 //     }
 // }
 
-
 import * as Cesium from "cesium";
 
 export interface Zone3DConfig {
@@ -367,7 +366,10 @@ export interface Radar3DOptions {
     longitude: number;
     latitude: number;
     antennaMastHeight?: number; // Height of antenna above ground (e.g. 25m)
-    numAzimuths?: number;       // Number of azimuth rays (144 = every 2.5 degrees)
+    numAzimuths?: number;       // BASE number of azimuth rays before adaptive
+                                 // refinement (144 = every 2.5 degrees).
+                                 // Extra rays get inserted automatically
+                                 // wherever neighbors disagree sharply.
     zones?: Zone3DConfig[];
 }
 
@@ -399,33 +401,51 @@ export class Cesium3DRadarCoverage {
         }
     ];
 
-    // A ray only counts something as a real "blocker" if the up-angle to it
-    // is at least this steep (~1.7 degrees). This stops tiny, harmless
-    // ground bumps right next to the radar from truncating a ray for no
-    // real reason.
     private static readonly MIN_BLOCK_SLOPE = 0.03;
-
-    // Don't allow anything within this distance of the radar to count as a
-    // "blocker" (avoids the antenna's own mast/base terrain falsely
-    // truncating rays at distance ~0).
     private static readonly MIN_BLOCK_DISTANCE = 300;
-
-    // Tiny same-ray smoothing used ONLY to stop a single noisy DEM pixel
-    // from being mistaken for a mountain. It does not project anything
-    // forward and does not blend with neighboring rays (that step has been
-    // removed entirely).
     private static readonly SMOOTH_WINDOW = 3;
+
+    // --- Adaptive refinement settings ---
+
+    // If two neighboring rays' "how far did it get" distances differ by more
+    // than this, we suspect a mountain edge/gap sits between them that
+    // neither ray directly sampled, and we insert a ray exactly in between
+    // to check. Lowered from 800 -> 250: check much more aggressively.
+    private static readonly JUMP_DISTANCE_THRESHOLD_M = 250;
+
+    // NEW: even when two neighbors reach the SAME distance (e.g. both hit
+    // full range, or both get blocked at a similar distance), their actual
+    // ground/mountain HEIGHT at that point can still differ a lot (one on a
+    // ridge crest, one in a valley) without ever tripping the distance
+    // check above. This catches that case.
+    private static readonly JUMP_HEIGHT_THRESHOLD_M = 120;
+
+    // Stop subdividing a gap once the two rays are closer together than this
+    // angle (~0.02 degrees) - prevents infinite bisection on a genuinely
+    // vertical cliff edge.
+    private static readonly MIN_ANGULAR_GAP_RAD = Cesium.Math.toRadians(0.02);
+
+    // How many rounds of "insert a ray in the middle of every big gap" to
+    // run. Each round can double the ray count in the affected areas.
+    private static readonly MAX_REFINE_ROUNDS = 9;
+
+    // Hard safety cap on total rays, so pathological terrain (e.g. cliffs
+    // everywhere) can't blow up ray count / performance. Raised since
+    // refinement is now much more aggressive.
+    private static readonly MAX_TOTAL_RAYS = 6000;
+
+    private static readonly stepMeters = 10;
 
     /**
      * Builds terrain-aware volumetric radar coverage zones.
      *
-     * For every one of the 144 directions around the radar, each zone's ray
-     * tries to reach the zone's full maxRange. If a mountain blocks the
-     * view before that, the ray's length for THAT direction is shortened to
-     * stop right at the mountain - the zone's edge pulls inward to hug the
-     * obstruction instead of floating a raised shelf out past it. If
-     * nothing blocks the view, the ray reaches the zone's full range as
-     * normal.
+     * Starts from `numAzimuths` evenly-spaced rays. Wherever two neighboring
+     * rays disagree sharply about how far they can see (one gets blocked
+     * close in, the next reaches full range) - a sign a mountain edge sits
+     * between them - extra rays are automatically sampled in that gap until
+     * the disagreement shrinks or a safety limit is hit. The final wall/cap
+     * are built from this adaptively-spaced ray set, so edges hug mountain
+     * shoulders instead of jumping straight across unsampled gaps.
      */
     static async create3DRadarZones(
         viewer: Cesium.Viewer,
@@ -435,111 +455,177 @@ export class Cesium3DRadarCoverage {
         const {
             longitude,
             latitude,
-            antennaMastHeight = 25,
+            antennaMastHeight = 0,
             numAzimuths = 144,
             zones = this.DEFAULT_3D_ZONES
         } = options;
 
         const maxOverallRange = Math.max(...zones.map(z => z.maxRange));
-        const stepMeters = 250;
-        const stepsPerRay = Math.ceil(maxOverallRange / stepMeters);
+        const stepsPerRay = Math.ceil(maxOverallRange / this.stepMeters);
 
-        // 1. Collect points for terrain query - one fine walk per ray,
-        // shared across all zones for efficiency.
-        const cartographics: Cesium.Cartographic[] = [];
-        const radarCenter = Cesium.Cartographic.fromDegrees(longitude, latitude);
-        cartographics.push(radarCenter);
-
-        for (let a = 0; a < numAzimuths; a++) {
-            const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
-            for (let s = 1; s <= stepsPerRay; s++) {
-                const dist = Math.min(s * stepMeters, maxOverallRange);
-                const { lon, lat } = this.destinationCoordinate(longitude, latitude, dist, azimuthRad);
-                cartographics.push(Cesium.Cartographic.fromDegrees(lon, lat));
-            }
-        }
-
+        // 0. Sample the radar's own location first, so we know its eye
+        // height before evaluating any ray.
+        const radarCarto = Cesium.Cartographic.fromDegrees(longitude, latitude);
         try {
-            await Cesium.sampleTerrain(terrainProvider, 11, cartographics);
+            await Cesium.sampleTerrain(terrainProvider, 11, [radarCarto]);
         } catch {
-            try {
-                await Cesium.sampleTerrain(terrainProvider, 9, cartographics);
-            } catch {
-                for (const c of cartographics) {
-                    const h = viewer.scene.globe.getHeight(c);
-                    if (h !== undefined) c.height = h;
-                }
-            }
+            const h = viewer.scene.globe.getHeight(radarCarto);
+            if (h !== undefined) radarCarto.height = h;
         }
-
-        const groundAltitude = cartographics[0].height || 0;
+        const groundAltitude = radarCarto.height || 0;
         const radarOriginAlt = groundAltitude + antennaMastHeight;
 
-        // 2. For each ray, find where it gets blocked (if at all) - this is
-        // the ONLY thing we compute now. No shadow projection, no floating
-        // shelf, no smoothing between neighboring rays.
-        interface RayBlock {
-            blockDist: number | null;   // distance of the blocking mountain, or null if clear
-            blockHeight: number | null; // real terrain height at that mountain
-            terrainForRay: number[];    // raw terrain height at each step (for the "no blocker" case)
+        interface RayEntry {
+            azimuthRad: number;
+            blockDist: number | null;
+            blockHeight: number | null;
+            terrainForRay: number[]; // raw terrain height per 250m step, up to maxOverallRange
         }
 
-        const rayBlocks: RayBlock[] = [];
-
-        for (let a = 0; a < numAzimuths; a++) {
-            const rayStartIndex = 1 + a * stepsPerRay;
-
-            const rawTerrainForRay: number[] = [];
-            for (let s = 1; s <= stepsPerRay; s++) {
-                const sample = cartographics[rayStartIndex + s - 1];
-                rawTerrainForRay.push(sample?.height ?? groundAltitude);
+        // Samples a BATCH of rays (given their azimuths) in one terrain call,
+        // and computes each one's blocking result. Used both for the initial
+        // base rays and for every later round of inserted rays.
+        const computeRayEntries = async (azimuthRads: number[]): Promise<RayEntry[]> => {
+            const cartographics: Cesium.Cartographic[] = [];
+            for (const azimuthRad of azimuthRads) {
+                for (let s = 1; s <= stepsPerRay; s++) {
+                    const dist = Math.min(s * this.stepMeters, maxOverallRange);
+                    const { lon, lat } = this.destinationCoordinate(longitude, latitude, dist, azimuthRad);
+                    cartographics.push(Cesium.Cartographic.fromDegrees(lon, lat));
+                }
             }
 
-            // Light noise-only smoothing, used ONLY to decide whether
-            // something is a real blocker - the height we actually draw
-            // still comes from the raw terrain, not this smoothed version.
-            const smoothedTerrainForRay: number[] = rawTerrainForRay.map((_, i) => {
-                const lo = Math.max(0, i - Math.floor(this.SMOOTH_WINDOW / 2));
-                const hi = Math.min(rawTerrainForRay.length - 1, i + Math.floor(this.SMOOTH_WINDOW / 2));
-                let sum = 0;
-                for (let k = lo; k <= hi; k++) sum += rawTerrainForRay[k];
-                return sum / (hi - lo + 1);
-            });
-
-            let runningMaxSlope = -Infinity;
-            let blockDist: number | null = null;
-            let blockHeight: number | null = null;
-
-            for (let s = 1; s <= stepsPerRay; s++) {
-                const dist = s * stepMeters;
-                const terrainH = smoothedTerrainForRay[s - 1];
-                const earthDrop = (dist * dist) / (2 * 6378137);
-                const slope = (terrainH + earthDrop - radarOriginAlt) / dist;
-
-                if (slope > runningMaxSlope) {
-                    runningMaxSlope = slope;
-                    if (slope > this.MIN_BLOCK_SLOPE && dist > this.MIN_BLOCK_DISTANCE) {
-                        blockDist = dist;
-                        blockHeight = rawTerrainForRay[s - 1]; // draw the REAL peak height, not smoothed
+            try {
+                await Cesium.sampleTerrain(terrainProvider, 11, cartographics);
+            } catch {
+                try {
+                    await Cesium.sampleTerrain(terrainProvider, 9, cartographics);
+                } catch {
+                    for (const c of cartographics) {
+                        const h = viewer.scene.globe.getHeight(c);
+                        if (h !== undefined) c.height = h;
                     }
                 }
             }
 
-            rayBlocks.push({ blockDist, blockHeight, terrainForRay: rawTerrainForRay });
-        }
+            const entries: RayEntry[] = [];
 
-        const getRawTerrainAtDist = (azimuthIdx: number, targetDist: number): number => {
-            const idx = Math.min(Math.max(1, Math.round(targetDist / stepMeters)), stepsPerRay) - 1;
-            return rayBlocks[azimuthIdx].terrainForRay[idx] ?? groundAltitude;
+            for (let a = 0; a < azimuthRads.length; a++) {
+                const rayStart = a * stepsPerRay;
+                const rawTerrainForRay: number[] = [];
+                for (let s = 0; s < stepsPerRay; s++) {
+                    rawTerrainForRay.push(cartographics[rayStart + s]?.height ?? groundAltitude);
+                }
+
+                const smoothedTerrainForRay: number[] = rawTerrainForRay.map((_, i) => {
+                    const lo = Math.max(0, i - Math.floor(this.SMOOTH_WINDOW / 2));
+                    const hi = Math.min(rawTerrainForRay.length - 1, i + Math.floor(this.SMOOTH_WINDOW / 2));
+                    let sum = 0;
+                    for (let k = lo; k <= hi; k++) sum += rawTerrainForRay[k];
+                    return sum / (hi - lo + 1);
+                });
+
+                let runningMaxSlope = -Infinity;
+                let blockDist: number | null = null;
+                let blockHeight: number | null = null;
+
+                for (let s = 1; s <= stepsPerRay; s++) {
+                    const dist = s * this.stepMeters;
+                    const terrainH = smoothedTerrainForRay[s - 1];
+                    const earthDrop = (dist * dist) / (2 * 6378137);
+                    const slope = (terrainH + earthDrop - radarOriginAlt) / dist;
+
+                    if (slope > runningMaxSlope) {
+                        runningMaxSlope = slope;
+                        if (slope > this.MIN_BLOCK_SLOPE && dist > this.MIN_BLOCK_DISTANCE) {
+                            blockDist = dist;
+                            blockHeight = rawTerrainForRay[s - 1];
+                        }
+                    }
+                }
+
+                entries.push({
+                    azimuthRad: azimuthRads[a],
+                    blockDist,
+                    blockHeight,
+                    terrainForRay: rawTerrainForRay
+                });
+            }
+
+            return entries;
         };
 
+        // "Effective distance" used purely to detect big jumps between
+        // neighbors: a clear ray (null) is treated as reaching maxOverallRange.
+        const effDist = (r: RayEntry) => r.blockDist ?? maxOverallRange;
+
+        // "Representative height" for a ray - the height of whatever it
+        // actually ended on (the blocking mountain, or the terrain at full
+        // range). Used to catch cases where two neighbors reach a similar
+        // DISTANCE but land on very different HEIGHTS (ridge vs valley).
+        const repHeight = (r: RayEntry): number => {
+            if (r.blockDist !== null && r.blockHeight !== null) return r.blockHeight;
+            const idx = Math.min(Math.max(1, Math.round(maxOverallRange / this.stepMeters)), stepsPerRay) - 1;
+            return r.terrainForRay[idx] ?? groundAltitude;
+        };
+
+        // 1. Base rays, evenly spaced.
+        const baseAzimuths = Array.from({ length: numAzimuths }, (_, a) => (a / numAzimuths) * Cesium.Math.TWO_PI);
+        let rays: RayEntry[] = await computeRayEntries(baseAzimuths);
+        rays.sort((a, b) => a.azimuthRad - b.azimuthRad);
+
+        // 2. Adaptive refinement rounds: find big neighbor-to-neighbor jumps
+        // (checking the circular wrap-around pair too), insert a midpoint
+        // ray for each, batch-sample them all at once, splice them in.
+        for (let round = 0; round < this.MAX_REFINE_ROUNDS; round++) {
+            if (rays.length >= this.MAX_TOTAL_RAYS) break;
+
+            const midpointAzimuths: number[] = [];
+            const insertAfterIndex: number[] = [];
+
+            for (let i = 0; i < rays.length; i++) {
+                const cur = rays[i];
+                const next = rays[(i + 1) % rays.length];
+
+                let angularGap = next.azimuthRad - cur.azimuthRad;
+                if (angularGap <= 0) angularGap += Cesium.Math.TWO_PI;
+
+                if (angularGap <= this.MIN_ANGULAR_GAP_RAD) continue;
+
+                const distJump = Math.abs(effDist(cur) - effDist(next));
+                const heightJump = Math.abs(repHeight(cur) - repHeight(next));
+
+                if (distJump > this.JUMP_DISTANCE_THRESHOLD_M || heightJump > this.JUMP_HEIGHT_THRESHOLD_M) {
+                    const midAz = (cur.azimuthRad + angularGap / 2) % Cesium.Math.TWO_PI;
+                    midpointAzimuths.push(midAz);
+                    insertAfterIndex.push(i);
+                }
+            }
+
+            if (midpointAzimuths.length === 0) break;
+
+            const room = this.MAX_TOTAL_RAYS - rays.length;
+            if (room <= 0) break;
+            const azimuthsToSample = midpointAzimuths.slice(0, room);
+            const indicesToUse = insertAfterIndex.slice(0, room);
+
+            const newEntries = await computeRayEntries(azimuthsToSample);
+
+            const combined = indicesToUse.map((idx, k) => ({ idx, entry: newEntries[k] }));
+            combined.sort((a, b) => b.idx - a.idx);
+            for (const { idx, entry } of combined) {
+                rays.splice(idx + 1, 0, entry);
+            }
+        }
+
+        // 3. Build each zone from the final adaptive ray set.
         const createdEntities: Cesium.Entity[] = [];
 
-        // 3. Build each zone - one wall + one cap, exactly like the
-        // simplest possible version - but now each ray's endpoint distance
-        // is EITHER the zone's full maxRange (if clear) OR the blocking
-        // mountain's distance (if something's in the way), capped so it
-        // never exceeds this zone's own maxRange.
+        const getRawTerrainAtDist = (r: RayEntry, targetDist: number): number => {
+            const idx = Math.min(Math.max(1, Math.round(targetDist / this.stepMeters)), stepsPerRay) - 1;
+            return r.terrainForRay[idx] ?? groundAltitude;
+        };
+
         for (let zIdx = zones.length - 1; zIdx >= 0; zIdx--) {
             const zone = zones[zIdx];
 
@@ -547,27 +633,20 @@ export class Cesium3DRadarCoverage {
             const wallBottomHeights: number[] = [];
             const capPositions: Cesium.Cartesian3[] = [];
 
-            for (let a = 0; a < numAzimuths; a++) {
-                const azimuthRad = (a / numAzimuths) * Cesium.Math.TWO_PI;
-                const { blockDist, blockHeight } = rayBlocks[a];
-
+            for (const ray of rays) {
                 let endpointDist: number;
                 let floor: number;
 
-                if (blockDist !== null && blockDist < zone.maxRange) {
-                    // Blocked before reaching full range: stop AT the mountain.
-                    endpointDist = blockDist;
-                    floor = blockHeight as number;
+                if (ray.blockDist !== null && ray.blockDist < zone.maxRange) {
+                    endpointDist = ray.blockDist;
+                    floor = ray.blockHeight as number;
                 } else {
-                    // Clear path (or the blocker is further away than this
-                    // zone even reaches): go the full distance.
                     endpointDist = zone.maxRange;
-                    floor = getRawTerrainAtDist(a, zone.maxRange);
+                    floor = getRawTerrainAtDist(ray, zone.maxRange);
                 }
 
                 const roof = floor + zone.ceilingHeight;
-
-                const { lon, lat } = this.destinationCoordinate(longitude, latitude, endpointDist, azimuthRad);
+                const { lon, lat } = this.destinationCoordinate(longitude, latitude, endpointDist, ray.azimuthRad);
                 const topPos = Cesium.Cartesian3.fromDegrees(lon, lat, roof);
 
                 wallTop.push(topPos);
