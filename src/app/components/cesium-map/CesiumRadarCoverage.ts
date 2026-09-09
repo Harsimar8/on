@@ -348,7 +348,6 @@
 //     }
 // }
 
-
 import * as Cesium from "cesium";
 
 export interface Zone3DConfig {
@@ -416,9 +415,19 @@ export class Cesium3DRadarCoverage {
         }
     ];
 
-    private static readonly MIN_BLOCK_SLOPE = 0.03;
-    private static readonly MIN_BLOCK_DISTANCE = 300;
-    private static readonly SMOOTH_WINDOW = 3;
+    private static readonly MIN_BLOCK_SLOPE = 0.10;
+    private static readonly MIN_BLOCK_DISTANCE = 600;
+    private static readonly SMOOTH_WINDOW = 5;
+
+    // Our terrain height comes from a ONE-TIME sample at LOD 11. Cesium
+    // often RENDERS terrain at a higher resolution than that once you're
+    // zoomed in, so the real visible ground can sit a little higher than
+    // what we sampled. Without this margin, the wall's floor - sitting
+    // exactly at our (slightly too low) sampled height - gets visually
+    // swallowed by the terrain's depth test and looks like it's sinking
+    // into the ground. Lifting the floor by a few meters keeps it visibly
+    // sitting ON TOP of the real terrain instead.
+    private static readonly FLOOR_SAFETY_MARGIN_M = 4;
 
     // --- Adaptive refinement settings ---
 
@@ -462,16 +471,25 @@ export class Cesium3DRadarCoverage {
         const maxOverallRange = Math.max(...zones.map(z => z.maxRange));
         const stepsPerRay = Math.ceil(maxOverallRange / this.stepMeters);
 
-        // 0. Sample the radar's own location first, so we know its eye
-        // height before evaluating any ray.
+        // 0. Determine the radar's own ground height. Prefer the LIVE,
+        // currently-rendered globe height (viewer.scene.globe.getHeight) -
+        // this is the SAME height source Cesium uses internally for
+        // HeightReference.CLAMP_TO_GROUND billboards, so using it here
+        // keeps the ray fan's origin point exactly where the radar marker
+        // visually sits. A separate one-time sampleTerrain() query at a
+        // fixed LOD can be tens of meters off on steep terrain and was
+        // causing the whole ray fan to float away from the radar icon.
+        // Fall back to sampleTerrain only if the live tile isn't loaded yet.
         const radarCarto = Cesium.Cartographic.fromDegrees(longitude, latitude);
-        try {
-            await Cesium.sampleTerrain(terrainProvider, 11, [radarCarto]);
-        } catch {
-            const h = viewer.scene.globe.getHeight(radarCarto);
-            if (h !== undefined) radarCarto.height = h;
+        let groundAltitude = viewer.scene.globe.getHeight(radarCarto);
+        if (groundAltitude === undefined) {
+            try {
+                await Cesium.sampleTerrain(terrainProvider, 11, [radarCarto]);
+                groundAltitude = radarCarto.height ?? 0;
+            } catch {
+                groundAltitude = 0;
+            }
         }
-        const groundAltitude = radarCarto.height || 0;
         const radarOriginAlt = groundAltitude + antennaMastHeight;
 
         interface RayEntry {
@@ -668,10 +686,10 @@ export class Cesium3DRadarCoverage {
 
                 if (ray.blockDist !== null && ray.blockDist < zone.maxRange) {
                     endpointDist = ray.blockDist;
-                    floor = ray.blockHeight as number;
+                    floor = (ray.blockHeight as number) + this.FLOOR_SAFETY_MARGIN_M;
                 } else {
                     endpointDist = zone.maxRange;
-                    floor = getRawTerrainAtDist(ray, zone.maxRange);
+                    floor = getRawTerrainAtDist(ray, zone.maxRange) + this.FLOOR_SAFETY_MARGIN_M;
                 }
 
                 const roof = floor + zone.ceilingHeight;

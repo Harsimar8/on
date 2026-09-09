@@ -11,6 +11,14 @@ export class CesiumEntityRenderer {
     // Stores 3D radar entities by entity.id so they can be cleaned up cleanly
     private readonly radarEntities = new Map<string, Cesium.Entity[]>();
 
+    // Bumped on every render() call. Lets an in-flight async radar build
+    // know whether it's still the most recent one - if render() gets
+    // called again (e.g. on hover/selection change) before a previous
+    // async radar build finishes, the older one's results get discarded
+    // instead of being added on top of / after the newer render's cleanup,
+    // which was causing overlapping/stale ray sets to flash in.
+    private renderGeneration = 0;
+
     constructor(
         private viewer: Cesium.Viewer,
         private terrainProvider: Cesium.TerrainProvider,
@@ -19,6 +27,7 @@ export class CesiumEntityRenderer {
     ) {}
 
     render(entities: Entity[]): void {
+        const myGeneration = ++this.renderGeneration;
         const filter = this.teamFilterService.cesiumFilter();
 
         // 1. Remove all billboards and standard entities
@@ -45,14 +54,14 @@ export class CesiumEntityRenderer {
             this.drawTeamDot(entity);
 
             if (entity.definition.entityType === "RadarSite") {
-                this.drawTerrainRadarCone(entity);
+                this.drawTerrainRadarCone(entity, myGeneration);
             }
         }
 
         this.viewer.scene.requestRender();
     }
 
-    private async drawTerrainRadarCone(entity: Entity): Promise<void> {
+    private async drawTerrainRadarCone(entity: Entity, myGeneration: number): Promise<void> {
         try {
             const radar3DEntities = await Cesium3DRadarCoverage.create3DRadarZones(
                 this.viewer,
@@ -63,11 +72,20 @@ export class CesiumEntityRenderer {
                     antennaMastHeight: 25,
                     numAzimuths: 144,
                     showDebugRays: true,
-                    
-                    
                     zones: Cesium3DRadarCoverage.DEFAULT_3D_ZONES
                 }
             );
+
+            // If a newer render() has started since this call began, this
+            // result is stale - throw it away instead of adding it, so a
+            // slow/older async build can never overlap with (or trail
+            // behind) whatever the latest render() already drew.
+            if (myGeneration !== this.renderGeneration) {
+                for (const ent of radar3DEntities) {
+                    this.viewer.entities.remove(ent);
+                }
+                return;
+            }
 
             // Store cleanly in the map
             this.radarEntities.set(entity.id, radar3DEntities);
@@ -79,7 +97,7 @@ export class CesiumEntityRenderer {
         }
     }
 
-    
+
     private drawRadar(entity: Entity): void {
     const selected =
         this.editorState.selectedEntity()?.id === entity.id;
@@ -117,7 +135,7 @@ export class CesiumEntityRenderer {
     });
 }
 
-    
+
       private drawTeamDot(entity: Entity): void {
     this.viewer.entities.add({
         position: Cesium.Cartesian3.fromDegrees(
